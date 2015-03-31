@@ -96,6 +96,9 @@ class Benchmark:
         for impl in os.listdir(os.path.join(self.directory, "implementations")):
             implpath = os.path.join(self.directory, "implementations", impl)
             if os.path.isdir(implpath):
+                disable_file = os.path.join(implpath, "disable")
+                if os.path.isfile(disable_file):
+                    continue
                 self.implementations.append(Implementation(self.hipermark_lib_dir,
                                                            self.benchmark_lib_dir,
                                                            impl,
