@@ -8,6 +8,17 @@ import sys
 def executable(fpath):
     return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
 
+# From http://stackoverflow.com/a/600612/496605
+# when migrating to Python 3, os.makedirs(.., exists_ok = True)
+# should be used instead
+def mkdir_p(path):
+    try:
+        os.makedirs(path)
+    except OSError as exc: # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else: raise
+
 class Implementation:
     def __init__(self, hipermark_lib_dir, benchmark_lib_dir, name, directory):
         if os.path.isdir(directory):
@@ -30,7 +41,7 @@ class Implementation:
 
     def instantiate(self, where, input_data, platform_file):
         if not os.path.isdir(where):
-            os.mkdir(where)
+            mkdir_p(where)
 
         # We use the current environment as a template, and then
         # extend it with some new variables.
