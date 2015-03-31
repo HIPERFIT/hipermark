@@ -118,7 +118,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                                        platform,
                                        run_implementation_fn,
                                        use_dataset_fn):
-    b = Benchmark(hipermark_dir, os.path.basename(benchmarkdir), benchmarkdir)
+    b = Benchmark(hipermark_dir, os.path.basename(os.path.normpath(benchmarkdir)), benchmarkdir)
     insts = []
     failed_insts = []
     results = {}
