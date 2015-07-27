@@ -1,5 +1,5 @@
 #################################################
-####### Overview of Hipermark Architecture ######
+###### Overview of Hipermark Architecture ######
 #################################################
 
 Hipermark works with this hierarchy:
@@ -12,7 +12,7 @@ Hipermark works with this hierarchy:
 
 
 #################################################
-####### API and Functionality of Hipermark ######
+###### API and Functionality of Hipermark ######
 #################################################
 
 Hipermark is written in Python and is object-oriented.
@@ -24,7 +24,7 @@ The program runs only one benchmark at a time. This is specified when the progra
 The implementations are compiled one time for each case meaning that m implementations and n datasets will lead to m*n compilations in total and n compilations for each implementation. The source code should only be compiled once for every implementation. See "To Do".
 
 #################################################
-################ Data Structure #################
+###### Data Structure ######
 #################################################
 
 The data should be structured as follows:
@@ -73,7 +73,7 @@ The data should be structured as follows:
 
 
 #################################################
-############### Design Standards ################
+###### Design Standards ######
 #################################################
 
 Documentation in this program follows the Docstring convention found in PEP 0257:
@@ -81,5 +81,5 @@ https://www.python.org/dev/peps/pep-0257/#what-is-a-docstring
 
 
 #################################################
-#################### To Do ######################
+###### To Do ######
 #################################################
