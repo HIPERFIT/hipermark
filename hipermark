@@ -73,7 +73,7 @@ class Implementation:
         keyword arguments:
         target_dir -- /instantiations/<benchmark>/<implementation>/<dataset>
         input_data -- path of input file
-        platform_file -- path of platform file
+        platform_file -- /config/platform_example.json
         """
         if not os.path.isdir(target_dir):
             mkdir_p(target_dir)
@@ -84,7 +84,7 @@ class Implementation:
         # HIPERMARK_BENCHMARK_LIB_DIR: /benchmarks/<benchmark>/lib
         # HIPERMARK_IMPLEMENTATION: /benchmarks/<benchmark>/implementations/<implementation>
         # HIPERMARK_INPUT: path of input file. /benchmarks/<benchmark>/dataset/input.json
-        # HIPERMARK_PLATFORM: path of platform file. /config/platform_example.json??
+        # HIPERMARK_PLATFORM: path of platform file. /config/platform_example.json
         instantiate_env = os.environ.copy()
         instantiate_env["HIPERMARK_LIB_DIR"] = self.hipermark_lib_dir
         instantiate_env["HIPERMARK_BENCHMARK_LIB_DIR"] = self.benchmark_lib_dir
@@ -210,7 +210,8 @@ def run_some_benchmark_implementations(hipermark_dir,
                                        run_implementation_fn,
                                        use_dataset_fn):
     """Declares all the objects associated with a specific benchmark:
-    both benchmark and implementation (indirectly) objects declaration are called here.
+    both benchmark and implementation objects declaration are called here
+    (implementation decl. is called through benchmark decl.)
     
     keyword arguments:
     hipermark_dir -- The directory from which this process was invoked.
