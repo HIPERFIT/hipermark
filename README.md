@@ -52,6 +52,16 @@ The data should be structured as follows:
   * DOCS
   * instantiations (created by running program)
     * instance1 (benchmark + implementation + dataset)
+      * Makefile
+      * needed library file(s)
+      * source code file(s)
+      * setup.mk
+      * input.data
+      * output.data
+      * run
+      * stderr.log
+      * stdout.log
+      * binary file for this impl.
     * instance2 ...
   * lib
     * include
@@ -59,16 +69,13 @@ The data should be structured as follows:
       * SDK_stub.h
       * Util.h
       * Utilities.cl
-    * generate_platform_mf.py
+    * generate\_platform\_mf.py
     * json_get.py
     * linearise_data.py
     * platform.macbookpro.intel.mk
     * platform.macbookpro.mk
     * setup.mk
     
-  
-  
-
 
 
 
