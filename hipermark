@@ -14,7 +14,9 @@ def executable(fpath):
 # when migrating to Python 3, os.makedirs(.., exists_ok = True)
 # should be used instead.
 def mkdir_p(path):
-    """Makes a directory and all non-existing directories needed to contain this directory."""
+    """Makes a directory and all non-existing directories needed to contain this directory. 
+    If the directory already exists, no error message is given and the function returns.
+    """
     try:
         os.makedirs(path)
     except OSError as exc: # Python >2.5
@@ -24,27 +26,28 @@ def mkdir_p(path):
 
 
 class Implementation:
-    """ 
-    An implementation is the source code of a solution to a general problem. The hierarchy is:
-    problem -> implementation -> benchmark.
+    """An implementation is the source code of a solution to a general problem.
+    The hierarchy is: problem -> implementation -> benchmark.
     """
     def __init__(self, hipermark_lib_dir, benchmark_lib_dir, name, directory):
-        """
-        The constructor of the class "Implementation". The self represents the instance of the object itself.
-        A function call "Implemantion()" will create an object and pass this object to __init__.
+        """The constructor of the class "Implementation".
+        Sets the appropriate variables for an implementation.
+        Also checks whether an instantiation is correctly configured with folders,
+        executables etc.
+        Does not compile the source code of the implementation.
         
         keyword arguments:
-        hipermark_lib_dir --
-        benchmark_bli_dir --
-        name --
-        directory --
+        hipermark_lib_dir -- /lib
+        benchmark_lib_dir -- /benchmarks/<benchmark>/lib
+        name -- Name of implementation's folder.
+        directory -- /benchmarks/<benchmark>/implementations/<implementation>
         """
         if os.path.isdir(directory): #returns true if path is an existing directory.
             self.directory = directory # directory of implementation
         else:
             # If the path is not a directory, one of these two errors are raised.
             if os.path.isfile(directory):
-                raise Exception("File %s exists, but should be an implementation directory" % directory)
+                raise Exception("File %s exists, but implementation should be contained in its own directory." % directory)
             else:
                 raise Exception("Implementation directory %s does not exist " % directory)
 
@@ -55,25 +58,33 @@ class Implementation:
         # Joins the directory path with "instantiate" to get the full path of the instantiate file. Sets the object var instantiatefile if this is an executable.
         instantiatefile = os.path.join(self.directory, "instantiate")
         if not executable(instantiatefile):
-            raise Exception("%s is not an executable file" % instantiatefile)
+            raise Exception("%s does not exist or it is not an executable file" % instantiatefile)
         self.instantiatefile = instantiatefile
 
     
-    # 
     # This function returns the spawned process' retcode, its stdout, and its stderr.
     # This function ALSO handles the input data which is the 2nd argument of the function call. This function creates the run file which contains a reference to input data.
     # This function could receive ALL possible input data and run script could then receive an argument to determine which input data should be run.
-    def instantiate(self, where, input_data, platform_file):
-        """
-        Runs the instantiatefile which creates a run file to run the implementation and also runs the local Makefile.
+    def instantiate(self, target_dir, input_data, platform_file):
+        """Runs the instantiatefile which creates a run file to run the
+        implementation and also runs the local Makefile.
         The compilation of the implementation source code takes place here.
+
+        keyword arguments:
+        target_dir -- /instantiations/<benchmark>/<implementation>/<dataset>
+        input_data -- path of input file
+        platform_file -- path of platform file
         """
-        if not os.path.isdir(where):
-            mkdir_p(where)
+        if not os.path.isdir(target_dir):
+            mkdir_p(target_dir)
 
         # Sets some environment variables. These are used in the subprocess.Popen function call, and they are handled in the "instantiate" files.
-        # We use the current environment as a template, and then
-        # extend it with some new variables.
+        # We use the current environment as a template, and the extend it with some new variables.
+        # HIPERMARK_LIB_DIR: /lib/
+        # HIPERMARK_BENCHMARK_LIB_DIR: /benchmarks/<benchmark>/lib
+        # HIPERMARK_IMPLEMENTATION: /benchmarks/<benchmark>/implementations/<implementation>
+        # HIPERMARK_INPUT: path of input file. /benchmarks/<benchmark>/dataset/input.json
+        # HIPERMARK_PLATFORM: path of platform file. /config/platform_example.json??
         instantiate_env = os.environ.copy()
         instantiate_env["HIPERMARK_LIB_DIR"] = self.hipermark_lib_dir
         instantiate_env["HIPERMARK_BENCHMARK_LIB_DIR"] = self.benchmark_lib_dir
@@ -84,26 +95,39 @@ class Implementation:
         # A new process which runs the instantiatefile is created. The stderr + stdout can be read from this process. 
         # close_fds=true means that the open file descriptors in this process are not inherited by the new process.
         # The env=instantiate_env gives the instantiate file some values for its variables.
+        # cwd = target_dir sets the child process' folder to:
+        # /instantiations/"<benchmark>-<implementation>-<dataset>"
         proc = subprocess.Popen(self.instantiatefile,
                                 env=instantiate_env,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
                                 stdin=subprocess.PIPE,
                                 close_fds=True,
-                                cwd=where)
-        # Reads data from stdout + stderr of spawned process until EOF is reached. Also waits for process to terminate.
+                                cwd=target_dir)
+
+        # Read data from stdout and stderr, until end-of-file is reached. Also waits for process to terminate.
         (stdoutdata, stderrdata) = proc.communicate(input=None)
         return (proc.returncode, stdoutdata, stderrdata)
 
-# This class describes a benchmark which is an abstract problem but not its specific implementation. A benchmark can contain many implementations.
 class Benchmark:
-    # In the constructor, we do some basic sanity-checking.  The
-    # primary purpose here is to provide better error messages than if
-    # we fail to read files later down the line.
-    # This initialization stores all the implementations and all the datasets of this benchmark. These should be located in folders under specific benchmark folder.
-    # It also does some checks on the content of the implementations and the datasets such as checking that an "implementations" and a "datasets" folder exists in the correct folder.
-    # directory 
+    # This class describes a benchmark which is an abstract problem 
+    # but not its specific implementation. A benchmark can in general have 
+    # many implementations and this object contains all the implementations
+    # in its self.implementations variable.
     def __init__(self, hipermarkdir, name, directory):
+        """
+        This initialization stores all the implementations and all the datasets of
+        this benchmark. 
+        These should be located in folders under specific benchmark folder.
+        It also does some checks on the content of the implementations and the datasets 
+        such as checking that an "implementations" and a "datasets" folder exists in
+        the correct folder.
+        
+        keyword arguments:
+        hipermark_dir -- The directory from which this process was invoked.
+        name -- name of benchmark as defined in the folder for its source code.
+        directory -- directory of the benchmark. E.g. finpar/benchmarks/OptionPricing
+        """
         self.hipermarkdir = hipermarkdir
         self.name = name
 
@@ -111,7 +135,7 @@ class Benchmark:
             self.directory = directory
         else:
             raise Exception("Benchmark directory %s does not exist" % directory)
-        dircontents = os.listdir(self.directory) # list of content in directory
+        dircontents = os.listdir(self.directory) # list of content in benchmark root directory
 
         # The lib directories do not have to exist.
         # The library functions for a benchmark is located in benchmarks/<benchmark>/lib/include
@@ -122,7 +146,7 @@ class Benchmark:
         if "implementations" in dircontents:
             self.__gather_implementations() #creates list of implementations to be run.
         else:
-            raise Exception("No implementation directory in %s" % directory)
+            raise Exception("No \"implementation\" directory in %s" % directory)
 
         if "datasets" in dircontents:
             self.datasets = os.path.join(self.directory, "datasets")
@@ -131,10 +155,13 @@ class Benchmark:
             raise Exception("No datasets directory in %s" % directory)
 
 
-# Creates a new Implementation object for each non-disabled folder inside /benchmarks/<benchmark> and appends these to a list of implementations which is part of the class' variables. The "Implementation" function call creates a new object and runs __init__ in the Implementations class.    
     def __gather_implementations(self):
+        """ Creates an implementation object for each non-disabled folder in 
+        /benchmarks/<benchmark>/implementations/. The objects are placed in
+        a list self.implementations.
+        """
         self.implementations = [] #list of implementation objects.
-        # This for loop runs over all folders (and files) found in the "implementations" folder.
+        # This for-loop runs over all folders (and files) found in the "implementations" folder.
         for impl in os.listdir(os.path.join(self.directory, "implementations")):
             # implpath contains the absolute path of the folder containing the specific implementation.
             implpath = os.path.join(self.directory, "implementations", impl)
@@ -148,10 +175,13 @@ class Benchmark:
                                                            impl,
                                                            os.path.join(self.directory, "implementations", impl)))
 
-# Sets the self.datasets variable to an associative array of tuples containing the file name of the input file 
     def __gather_datasets(self):
+        """Checks that each dataset in /benchmarks/<benchmark>/datasets/
+        has the correct structure. Sets the self.datasets variable to an
+        associative array of tuples containing the file name of the input
+        file and a Python object representing the expected output.
+        """
         self.datasets = {}
-        # For each directory (or file) in "datasets", do
         for dataset in os.listdir(os.path.join(self.directory, "datasets")):
             datasetpath = os.path.join(self.directory, "datasets", dataset)
             if os.path.isdir(datasetpath):
@@ -163,7 +193,6 @@ class Benchmark:
                 if not os.path.isfile(outputfile):
                     raise Exception("File %s missing or not a file." % outputfile)
 
-                # The path of the input file is stored. The content of the JSON output file is stored as an array in datasets array in the benchmark class.
                 self.datasets[dataset] = { 'input_file' : inputfile,
                                            'expected_output' : read_json_file(outputfile)
                                          }
@@ -180,9 +209,23 @@ def run_some_benchmark_implementations(hipermark_dir,
                                        platform,
                                        run_implementation_fn,
                                        use_dataset_fn):
+    """Declares all the objects associated with a specific benchmark:
+    both benchmark and implementation (indirectly) objects declaration are called here.
+    
+    keyword arguments:
+    hipermark_dir -- The directory from which this process was invoked.
+    workdir -- hipermark_dir/instantiations. Where the binaries are placed.
+    benchmarkdir -- benchmarks/<benchmark>. Path of benchmark to run.
+    platform -- path of platform file.
+    run_implementation_fn -- pointer to function run_implementation_fn
+    use_dataset_fn --pointer to function use_dataset_fn
+    """
+
+    # Instantiates the benchmark objects which contain the implementation objects. 
+    # Does not compile.
     b = Benchmark(hipermark_dir, os.path.basename(os.path.normpath(benchmarkdir)), benchmarkdir)
-    insts = []
-    failed_insts = []
+    insts = []  # all succesfull compilations.
+    failed_insts = [] # all failed compilations
     results = {}
 
     for impl in b.implementations:
@@ -191,10 +234,13 @@ def run_some_benchmark_implementations(hipermark_dir,
         for dataset in b.datasets:
             if not use_dataset_fn(dataset):
                 continue
+            #instdir = <hipermark_dir>/instantiations/<benchmark>/<implementation>/<dataset>
             instdir = os.path.join(workdir,
                                    "%s-%s-%s" % (b.name, impl.name, dataset))
             print("Instantiating in %s" % instdir)
-            (retcode, stdout, stderr) = impl.instantiate(instdir, b.datasets[dataset]['input_file'], platform)
+            # Here, the compilation takes place. It happens one time for each 
+            # dataset in every instantiation.
+            (retcode, stdout, stderr) = impl.instantiate(instdir, b.datasets[dataset]['input_file'], platform) #compilation
             if retcode != 0:
                 failed_insts.append({ 'benchmark' : b.name,
                                       'implementation' : impl.name,
@@ -342,6 +388,10 @@ def what_to_run():
              sys.argv[0])
 
 if __name__ == '__main__':
+    """This main function first creates lists of benchmarks, implementations, and datasets
+    which it will run. It then runs these benchmarks and prints the results from stdout 
+    and from stderr.
+    """
     (benchmark, implementations, datasets) = what_to_run()
     instantiations_dir = "instantiations"
     platform_file = "config/platform_example.json"
@@ -363,6 +413,7 @@ if __name__ == '__main__':
     print("Will use platform configuration %s." % platform_file)
     hipermark_dir = os.getcwd()
 
+    #Pointers to these functions are passed as arguments below.
     def run_implementation_fn(impl):
         if implementations is None:
             return True
