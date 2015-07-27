@@ -235,9 +235,10 @@ def run_some_benchmark_implementations(hipermark_dir,
         for dataset in b.datasets:
             if not use_dataset_fn(dataset):
                 continue
-            #instdir = <hipermark_dir>/instantiations/<benchmark>/<implementation>/<dataset>
+            #instdir = <hipermark_dir>/instantiations-<benchmark>-<implementation>-<dataset>
+            # names of inst folders are set here
             instdir = os.path.join(workdir,
-                                   "%s-%s-%s" % (b.name, impl.name, dataset))
+                                   "%s-%s-%s" % (b.name, impl.name, dataset)) 
             print("Instantiating in %s" % instdir)
             # Here, the compilation takes place. It happens one time for each 
             # dataset in every instantiation.
@@ -268,6 +269,9 @@ def run_some_benchmark_implementations(hipermark_dir,
             with open(stderrpath, "w") as stderr:
                 print("Output can be found in %s and %s" % (stdoutpath, stderrpath))
                 try:
+                    # Here, the execution of the code takes place. 
+                    # cat input.data | ./executable is called here.
+                    # This sub process is run in the target directory
                     proc = subprocess.Popen(os.path.join(instdir, "run"),
                                             stdout=stdout,
                                             stderr=stderr,
@@ -332,20 +336,28 @@ def run_some_benchmark_implementations(hipermark_dir,
                         "cannot read result")
     return (results, failed_insts)
 
+
 def read_runtime(instdir):
+    """Reads the runtime.txt holding the run time, and created by the executable. 
+    """
     with open(os.path.join(instdir, "runtime.txt"), "r") as file:
         return int(file.read())
 
-# returns an array containing the content of the JSON file.
+
 def read_json_file(filename):
+    """ returns an array containing the content of the JSON file.
+    """
     with open(filename, "r") as file:
         return json.loads(file.read())
 
 
+# Should a relative value be used instead of epsilon?
 epsilon = 0.001
 
-# Generic comparison function using epsilon for comparing floats.
+
 def compare_json(json1, json2):
+    """Generic comparison function using epsilon for comparing floats.
+    """
     if type(json1) != type(json2):
         return False
 
