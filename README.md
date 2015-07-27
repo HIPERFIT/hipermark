@@ -8,12 +8,7 @@ Hipermark works with this hierarchy:
 
 2. Implementation: A specific solution to a problem. An implementation contains the source code of the solution to a specific problem. Each problem can have many different implementations which can use openMP or openCL and can be written in C, C++, futhark, Haskell etc.
 
-3. Case: An implementation plus input and output data plus any configurations. A case run can be run on a computer since both the source code and the input data is present. A case validates if it produces the output data which is expected from the input data with which the function call is made. So a case is called with both input data and the expected output data. The instantiate then calls these procedures:
-  1. creates a input.data which formats the input.json data in a implementation/benchmark-dependant way.
-  2. generates a platform.mk file from /lib/generate\_platform\_mk.py with the argument /config/platform_example.json.
-  3. Sets NCORES with /lib/json_get.py
-  4. Runs the make file that has been copied to the target folder.
-
+3. Case: An implementation plus input and output data plus any configurations. A case run can be run on a computer since both the source code and the input data is present. A case validates if it produces the output data which is expected from the input data with which the function call is made. So a case is called with both input data and the expected output data. 
 
 #################################################
 ## API and Functionality of hipermark ##
@@ -35,7 +30,12 @@ The implementation and benchmark concepts are implemented as classes in Hipermar
 
 2. For each implementation and for each dataset it then runs the function implementation.instantiate. This function makes the target directory for the running of a case, sets some variables found in the "instantiate" file, and then creates a new process which runs the instantiate file and switches the folder of the child process to the target directory.
 
-3. The instantiate script copies the needed library and configuration files to the target directory (in /instantiations/<instantiation>). It creates a run file where the number of cores (and othr run-time parameters?) are set. When the run file is executed, it runs the binary file with the input found in input.data.
+3. The instantiate script copies the needed library and configuration files to the target directory (in /instantiations/<instantiation>). It creates a run file where the number of cores (and othr run-time parameters?) are set. When the run file is executed, it runs the binary file with the input found in input.data. The instantiate then calls these procedures:
+  1. creates a input.data which formats the input.json data in a implementation/benchmark-dependant way.
+  2. generates a platform.mk file from /lib/generate\_platform\_mk.py with the argument /config/platform_example.json.
+  3. Sets NCORES with /lib/json_get.py
+  4. Runs the make file that has been copied to the target folder.
+
 
 #################################################
 ###### Design Standards ######
