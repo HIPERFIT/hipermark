@@ -16,6 +16,9 @@ def executable(fpath):
 def mkdir_p(path):
     """Makes a directory and all non-existing directories needed to contain this directory. 
     If the directory already exists, no error message is given and the function returns.
+    
+    keyword arguments:
+    path -- full path of the directory to be made
     """
     try:
         os.makedirs(path)
@@ -79,7 +82,7 @@ class Implementation:
             mkdir_p(target_dir)
 
         # Sets some environment variables. These are used in the subprocess.Popen function call, and they are handled in the "instantiate" files.
-        # We use the current environment as a template, and the extend it with some new variables.
+        # We use the current environment as a template, and then extend it with some new variables.
         # HIPERMARK_LIB_DIR: /lib/
         # HIPERMARK_BENCHMARK_LIB_DIR: /benchmarks/<benchmark>/lib
         # HIPERMARK_IMPLEMENTATION: /benchmarks/<benchmark>/implementations/<implementation>
@@ -115,10 +118,10 @@ class Benchmark:
     # many implementations and this object contains all the implementations
     # in its self.implementations variable.
     def __init__(self, hipermarkdir, name, directory):
-        """
-        This initialization stores all the implementations and all the datasets of
-        this benchmark. 
-        These should be located in folders under specific benchmark folder.
+        """This initialization stores all the implementations and all the datasets of
+        this benchmark. It thus collects info about this benchmark's implementations.
+        These source code of which should be located in folders in:
+        /benchmarks/<benchmark>/implementations/
         It also does some checks on the content of the implementations and the datasets 
         such as checking that an "implementations" and a "datasets" folder exists in
         the correct folder.
@@ -126,7 +129,7 @@ class Benchmark:
         keyword arguments:
         hipermark_dir -- The directory from which this process was invoked.
         name -- name of benchmark as defined in the folder for its source code.
-        directory -- directory of the benchmark. E.g. finpar/benchmarks/OptionPricing
+        directory -- directory of the benchmark. E.g. /benchmarks/OptionPricing
         """
         self.hipermarkdir = hipermarkdir
         self.name = name
@@ -138,11 +141,10 @@ class Benchmark:
         dircontents = os.listdir(self.directory) # list of content in benchmark root directory
 
         # The lib directories do not have to exist.
-        # The library functions for a benchmark is located in benchmarks/<benchmark>/lib/include
+        # The library functions for a benchmark are located in benchmarks/<benchmark>/lib/include
         self.benchmark_lib_dir = os.path.join(self.directory, "lib")
         self.hipermark_lib_dir = os.path.join(self.hipermarkdir, "lib")
 
-        # The implementations folder contains the different implementations of a benchmark.
         if "implementations" in dircontents:
             self.__gather_implementations() #creates list of implementations to be run.
         else:
@@ -162,11 +164,10 @@ class Benchmark:
         """
         self.implementations = [] #list of implementation objects.
         # This for-loop runs over all folders (and files) found in the "implementations" folder.
-        for impl in os.listdir(os.path.join(self.directory, "implementations")):
-            # implpath contains the absolute path of the folder containing the specific implementation.
+        implrootpath = os.path.join(self.directory, "implementations")
+        for impl in os.listdir(implrootpath):
             implpath = os.path.join(self.directory, "implementations", impl)
             if os.path.isdir(implpath):
-                # Placing a file called "disable" inside an implementation folder will disable its execution and implementation. 
                 disable_file = os.path.join(implpath, "disable")
                 if os.path.isfile(disable_file):
                     continue
@@ -174,6 +175,8 @@ class Benchmark:
                                                            self.benchmark_lib_dir,
                                                            impl,
                                                            os.path.join(self.directory, "implementations", impl)))
+            else:
+                raise Exception("%s may only contain folders, not files." %implrootpath )
 
     def __gather_datasets(self):
         """Checks that each dataset in /benchmarks/<benchmark>/datasets/
@@ -211,7 +214,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                                        use_dataset_fn):
     """Declares all the objects associated with a specific benchmark:
     both benchmark and implementation objects declaration are called here
-    (implementation decl. is called through benchmark decl.)
+    (implementation decl. is called through benchmark decl.). 
     
     keyword arguments:
     hipermark_dir -- The directory from which this process was invoked.

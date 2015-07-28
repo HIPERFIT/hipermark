@@ -22,11 +22,13 @@ The implementations are compiled one time for each case meaning that m implement
 
 The implementation and benchmark concepts are implemented as classes in Hipermark, the case concept is not.
 
+Th hipermark program will not run implementations which contain a file called "disable" in /benchmarks/<benchmark>/implementations/<implementation>, i.e., the root folder of the specific implementation.
+
 #################################################
 ### Functionality of hipermark ###
 #################################################
 
-1. When the program is executed, it creates an overview of all benchmarks, implementations, and datasets and checks that the necessary files and folders are present.
+1. When the program is executed, it creates an "overview" (contained in some datastructures) of all benchmarks (objects), implementations (objects), and datasets ( and checks that the necessary files and folders are present.
 
 2. For each implementation and for each dataset it then runs the function implementation.instantiate. This function makes the target directory for the running of a case and sets some variables found in the "instantiate" file which is located in implementation folder. It then creates a new process which runs the instantiate file and switches the folder of the child process to the target directory. There exists one instantiation file and one make file per implementation. So the same file is run once for each input.
 
