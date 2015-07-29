@@ -14,7 +14,9 @@ Hipermark works with this hierarchy:
 ## API and Functionality of hipermark ##
 #################################################
 
-Hipermark is written in Python and is object-oriented.
+#### The user must follow design to make hipermark work
+
+Hipermark should be called 
 
 The program runs only one benchmark at a time. This is specified when the program is executed.
 
@@ -63,7 +65,25 @@ Man kan også blot angive stien til dataset-mappen.
 
 Det skal være nemt at tilføje nye dataset uden at ændre implementeringer.
 
-Instantiate og/eller Makefilerne bør ikke være for komplicerede. Det gælder også "run"-filerne. 
+Instantiate og/eller Makefilerne bør ikke være for komplicerede. Det gælder også "run"-filerne.
+
+Since more cases will share the same binaries, the instantiation folder structure must be made deeper such that the structure becomes /instantiations/<bencmark>-<implementation>/<dataset>. The run files and the input + output files will be located in the appropriate dataset folder. The binary will be located in the <benchmark>-<implementation> folder.
+
+The configuration contained in the platform file (NCORES and more) will be made from instantiations_data -- for now.
+
+Each implementation only has ONE instantiate and ONE instantiate_data file.
+
+The error handling at 
+
+So the new structure of /instantiations/ will become:
+* instantiations
+  * "<benchmark>-<implementation>/" (<instantiation>)
+    * binary for implementation (i.e., compiled source code)
+    * run file that can take arguments (extended run file) -- $run <dataset> + other?
+    * datasets/
+      * <dataset>
+        * input.data
+        * output.data
 
 #################################################
 ###### Data Structure ######

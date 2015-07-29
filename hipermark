@@ -59,23 +59,60 @@ class Implementation:
         self.benchmark_lib_dir = benchmark_lib_dir
 
         # Joins the directory path with "instantiate" to get the full path of the instantiate file. Sets the object var instantiatefile if this is an executable.
-        instantiatefile = os.path.join(self.directory, "instantiate")
-        if not executable(instantiatefile):
-            raise Exception("%s does not exist or it is not an executable file" % instantiatefile)
-        self.instantiatefile = instantiatefile
+        instantiate_file = os.path.join(self.directory, "instantiate")
+        instantiate_data_file = os.path.join(self.directory, "instantiate_data")
+        if not executable(instantiate_file):
+            raise Exception("%s does not exist or it is not an executable file" % instantiate_file)
+        if not executable(instantiate_data_file):
+            raise Exception("%s does not exist or it is not an executable file" % instantiate_data_file)
+        self.instantiate_file = instantiate_file
+        self.instantiate_data_file = instantiate_data_file
+
+
+    # instantiate_data should also take the name of the dataset as argument.
+    # This name should be the name of the folder in which the dataset is placed.
+    def instantiate_data(self, target_dir, input_data):
+        """Run the instantiate_data script which creates a run file to run the
+        implementation.
+
+        keyword arguments:
+        target_dir -- /instantiations/"<benchmark>-<implementation>"/datasets/<dataset>
+        input_data -- path of input file. /benchmarks/<benchmark>/datasets/<dataset>
+        """
+        if not os.path.isdir(target_dir):
+            mkdir_p(target_dir)
+        
+        # HIPERMARK_LIB_DIR: path of main library. /lib/
+        # HIPERMARK_INPUT: path of input file. /benchmarks/<benchmark>/dataset/input.json
+        instantiate_env = os.environ.copy()
+        instantiate_env["HIPERMARK_LIB_DIR"] = self.hipermark_lib_dir
+        instantiate_env["HIPERMARK_INPUT"] = input_data
+
+        proc = subprocess.Popen(self.instantiate_data_file,
+                                env=instantiate_env,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                stdin=subprocess.PIPE,
+                                close_fds=True,
+                                cwd=target_dir)
+
+        # Read data from stdout and stderr, until end-of-file is reached. Also waits for process to terminate.
+        (stdoutdata, stderrdata) = proc.communicate(input=None)
+        return (proc.returncode, stdoutdata, stderrdata)
+
 
     
-    # This function returns the spawned process' retcode, its stdout, and its stderr.
-    # This function ALSO handles the input data which is the 2nd argument of the function call. This function creates the run file which contains a reference to input data.
     # This function could receive ALL possible input data and run script could then receive an argument to determine which input data should be run.
-    def instantiate(self, target_dir, input_data, platform_file):
-        """Runs the instantiatefile which creates a run file to run the
+    # the instantiate file copies all the necessary source files to its own folder.
+    def instantiate(self, target_dir, platform_file):
+        """Runs the instantiate_file which creates a run file to run the
         implementation and also runs the local Makefile.
+        The instantiate file copies all the necessary source files in its own
+        folder in /instantiations/.
         The compilation of the implementation source code takes place here.
 
         keyword arguments:
-        target_dir -- /instantiations/<benchmark>/<implementation>/<dataset>
-        input_data -- path of input file
+        target_dir -- /instantiations/"<benchmark>-<implementation>-<dataset>"
         platform_file -- /config/platform_example.json
         """
         if not os.path.isdir(target_dir):
@@ -86,21 +123,16 @@ class Implementation:
         # HIPERMARK_LIB_DIR: /lib/
         # HIPERMARK_BENCHMARK_LIB_DIR: /benchmarks/<benchmark>/lib
         # HIPERMARK_IMPLEMENTATION: /benchmarks/<benchmark>/implementations/<implementation>
-        # HIPERMARK_INPUT: path of input file. /benchmarks/<benchmark>/dataset/input.json
         # HIPERMARK_PLATFORM: path of platform file. /config/platform_example.json
         instantiate_env = os.environ.copy()
         instantiate_env["HIPERMARK_LIB_DIR"] = self.hipermark_lib_dir
         instantiate_env["HIPERMARK_BENCHMARK_LIB_DIR"] = self.benchmark_lib_dir
         instantiate_env["HIPERMARK_IMPLEMENTATION"] = self.directory
-        instantiate_env["HIPERMARK_INPUT"] = input_data
         instantiate_env["HIPERMARK_PLATFORM"] = platform_file
 
-        # A new process which runs the instantiatefile is created. The stderr + stdout can be read from this process. 
-        # close_fds=true means that the open file descriptors in this process are not inherited by the new process.
-        # The env=instantiate_env gives the instantiate file some values for its variables.
         # cwd = target_dir sets the child process' folder to:
-        # /instantiations/"<benchmark>-<implementation>-<dataset>"
-        proc = subprocess.Popen(self.instantiatefile,
+        # /instantiations/"<benchmark>-<implementation>/"
+        proc = subprocess.Popen(self.instantiate_file,
                                 env=instantiate_env,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
@@ -228,42 +260,71 @@ def run_some_benchmark_implementations(hipermark_dir,
     # Instantiates the benchmark objects which contain the implementation objects. 
     # Does not compile.
     b = Benchmark(hipermark_dir, os.path.basename(os.path.normpath(benchmarkdir)), benchmarkdir)
-    insts = []  # all succesfull compilations.
-    failed_insts = [] # all failed compilations
+    data_insts = []  # all succesfull data compilations.
+    failed_data_insts = [] # all failed data compilations
+    insts = []  # all succesfull data compilations.
+    failed_insts = [] # all failed data compilations
     results = {}
 
+    # Running all "instantiate_data" files
     for impl in b.implementations:
         if not run_implementation_fn(impl):
             continue
         for dataset in b.datasets:
             if not use_dataset_fn(dataset):
                 continue
-            #instdir = <hipermark_dir>/instantiations-<benchmark>-<implementation>-<dataset>
-            # names of inst folders are set here
-            instdir = os.path.join(workdir,
-                                   "%s-%s-%s" % (b.name, impl.name, dataset)) 
-            print("Instantiating in %s" % instdir)
-            # Here, the compilation takes place. It happens one time for each 
-            # dataset in every instantiation.
-            (retcode, stdout, stderr) = impl.instantiate(instdir, b.datasets[dataset]['input_file'], platform) #compilation
+            #inst_data_dir =<hipermark_dir>/instantiations/<benchmark>-<implementation>/datasets/<dataset>
+            inst_data_dir = os.path.join(workdir,
+                                   "%s-%s/datasets/%s" % (b.name, impl.name, dataset)) 
+            print("Instantiating data in %s" % inst_data_dir)
+            (retcode, stdout, stderr) = impl.instantiate_data(inst_data_dir, b.datasets[dataset]['input_file'], "[dataset.name]") #compilation of dataset.
             if retcode != 0:
-                failed_insts.append({ 'benchmark' : b.name,
+                failed_data_insts.append({ 'benchmark' : b.name,
                                       'implementation' : impl.name,
                                       'dataset' : dataset,
-                                      'instantiation_directory' : instdir,
+                                      'instantiation_directory' : inst_data_dir,
                                       'retcode' : retcode,
                                       'stdout' : stdout,
                                       'stderr' : stderr})
                 print("Spoiler: failed")
             else:
-                insts.append({ 'benchmark' : b.name,
+                data_insts.append({ 'benchmark' : b.name,
                                'implementation' : impl.name,
                                'dataset' : dataset,
-                               'instantiation_directory' : instdir,
+                               'instantiation_directory' : inst_data_dir,
                                'expected_output' : b.datasets[dataset]['expected_output']
                            })
 
-    for inst in insts:
+    # Running all "instantiate" files
+    for impl in b.implementations:
+        if not run_implementation_fn(impl):
+            continue
+        inst_dir = os.path.join(workdir, "%s-%s" % (b.name, impl.name))
+        print("Instantiating source code in %s" % inst_dir)
+        (retcode, stdout, stderr) = impl.instantiate(inst_dir, platform)
+        if retcode != 0:
+            failed_insts.append({ 'benchmark' : b.name,
+                                      'implementation' : impl.name,
+                                      #'dataset' : dataset,
+                                      'instantiation_directory' : inst_dir,
+                                      'retcode' : retcode,
+                                      'stdout' : stdout,
+                                      'stderr' : stderr})
+            print("Spoiler: failed")
+        else:
+            insts.append({ 'benchmark' : b.name,
+                        'implementation' : impl.name,
+                        #'dataset' : dataset,
+                        'instantiation_directory' : inst_dir,
+                        'expected_output' : b.datasets[dataset]['expected_output']})
+
+    # Here, all data instantiations are looped over and the run file
+    # is executed for each dataset. Error messages are also collected.
+    # This execution should allow run to take an argument.
+    for inst in data_insts:
+        #inst_dir = os.path.join(workdir, "%s-%s" % (b.name, impl.name))
+        # we need to be able to access parent folder.
+        # instdir = /instantiations/<benchmark>-<implementation>/datasets/<dataset>
         instdir = inst['instantiation_directory']
         print("\nRunning %s" % instdir)
         stdoutpath = os.path.join(instdir, "stdout.log")
@@ -275,7 +336,12 @@ def run_some_benchmark_implementations(hipermark_dir,
                     # Here, the execution of the code takes place. 
                     # cat input.data | ./executable is called here.
                     # This sub process is run in the target directory
-                    proc = subprocess.Popen(os.path.join(instdir, "run"),
+                    # For now, the dataset is hardcoded. Obviously, this must be changed.
+                    # run will need to be told where ./VolCalib (binary) is located.
+                    # This should be done through environment variables.
+                    print("Before subprocess")
+                    proc = subprocess.Popen([os.path.join(instdir,"../..", "run"),
+                                             os.path.join(instdir, "input.data")],
                                             stdout=stdout,
                                             stderr=stderr,
                                             stdin=subprocess.PIPE,
@@ -283,6 +349,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                                             cwd=instdir)
                     proc.stdin.close() # Make sure stdin EOFs.
                     proc.wait()
+                    print("After subprocess")
                 except:
                     note_result(results,
                                 inst['benchmark'],
@@ -337,7 +404,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                         inst['implementation'],
                         inst['dataset'],
                         "cannot read result")
-    return (results, failed_insts)
+    return (results, failed_data_insts)
 
 
 def read_runtime(instdir):
