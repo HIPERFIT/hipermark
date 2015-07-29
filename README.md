@@ -24,8 +24,8 @@ An executable that follows these principles:
 
 * These arguments are available within the program since the program is executed with these environment variables. The paths are specified relative to the root folder described above.
   * HIPERMARK\_LIB\_DIR -- /lib
-  * HIPERMARK\_BENCHMARK\_LIB\_DIR -- /benchmarks/<benchmark>/implementations/<implementation>/lib
-  * HIPERMARK_IMPLEMENTATION -- /benchmarks/<benchmark>/implementations/<implementation>
+  * HIPERMARK\_BENCHMARK\_LIB\_DIR -- /benchmarks/\<benchmark\>/implementations/\<implementation\>/lib
+  * HIPERMARK_IMPLEMENTATION -- /benchmarks/\<benchmark\>/implementations/\<implementation\>
   * HIPERMARK_PLATFORM --
 * Copy all required files from source destination to instantiate destination. The instantiate destination is the current folder ("./") since hipermark will start a process in which the program is executed and this process' path will be the place to store the binary of the source code of the implementation.
 * The /lib/generate\_platform\_mk.py Python script must be executed with the argument of the desired platform and the output must be placed in ./platform.mk (relative to the folder of the execution of "instantiate". Relatively to the root directory of the benchmark, the same path is: /instantiations/"<benchmark>-<implementation>"/).
@@ -34,6 +34,11 @@ An executable that follows these principles:
 
 
 #### instantiate_data
+
+
+#### Makefile
+
+
 
 ### Use of hipermark
 
