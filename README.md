@@ -34,7 +34,9 @@ An executable that follows these principles:
 
 
 #### instantiate_data
+hipermark runs instantiate\_data one time for each dataset for each implementation.
 
+instantiate\_data is an executable that the user can choose to use in order to copy the input data into a position accessible for the above mentioned run script, and instantiate_data can also be used to format the input data into another format if that is required by the compiled implementation. The run script should call the executable and allow an argument for the input data to be given.
 
 #### Makefile
 
