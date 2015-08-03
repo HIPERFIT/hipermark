@@ -56,7 +56,7 @@ Th hipermark program will not run implementations which contain a file called "d
 ### Functionality of hipermark ###
 #################################################
 
-1. When the program is executed, it creates an "overview" (contained in some datastructures) of all benchmarks (objects), implementations (objects), and datasets ( and checks that the necessary files and folders are present.
+1. When the program is executed, it creates an "overview" (contained in some datastructures) of all benchmarks (objects), implementations (objects), and datasets. It also checks that the necessary files and folders are present.
 
 2. For each implementation and for each dataset it then runs the function implementation.instantiate. This function makes the target directory for the running of a case and sets some variables found in the "instantiate" file which is located in implementation folder. It then creates a new process which runs the instantiate file and switches the folder of the child process to the target directory. There exists one instantiation file and one make file per implementation. So the same file is run once for each input.
 
@@ -79,27 +79,6 @@ https://www.python.org/dev/peps/pep-0257/#what-is-a-docstring
 ## To Do ##
 #################################################
 
-* The source code should only be compiled once for every implementation.
-There only exists one instantiate file and one make file for each implementation, so the same instantiate file is run several times, and only the HIPERMARK_INPUT differ. This means that the HIPERMARK input should be changed somehow. It could include all possible inputs or something else could be done. The run file could then contain an array of all the possible inputs that could be run with this implementation.
-
-The input data options probably need to be set when instantiate is run. The instantiate method needs to be changed to accept an array of input data.
-
-An idea is to set the global variable $DATASET and then call instantiate/make from hipermark with the argument "data". The script should then create the input.data files for each available dataset. Hipermark then also needs to remember the names of the "compiled" datasets so that it can run one time for each dataset.
-
-Evt. vha. argumenter. Ellers vha. miljøvariable -- kan disse klare arrays?
-Man kan også blot angive stien til dataset-mappen.
-
-Det skal være nemt at tilføje nye dataset uden at ændre implementeringer.
-
-Instantiate og/eller Makefilerne bør ikke være for komplicerede. Det gælder også "run"-filerne.
-
-Since more cases will share the same binaries, the instantiation folder structure must be made deeper such that the structure becomes /instantiations/<bencmark>-<implementation>/<dataset>. The run files and the input + output files will be located in the appropriate dataset folder. The binary will be located in the <benchmark>-<implementation> folder.
-
-The configuration contained in the platform file (NCORES and more) will be made from instantiations_data -- for now.
-
-Each implementation only has ONE instantiate and ONE instantiate_data file.
-
-The error handling at 
 
 So the new structure of /instantiations/ will become:
 * instantiations

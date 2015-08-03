@@ -70,11 +70,8 @@ class Implementation:
         self.instantiate_data_file = instantiate_data_file
 
 
-    # instantiate_data should also take the name of the dataset as argument.
-    # This name should be the name of the folder in which the dataset is placed.
     def instantiate_data(self, inst_dir, input_data, dataset_name):
-        """Run the instantiate_data script which creates a run file to run the
-        implementation.
+        """Run the instantiate_data script which prepares the input data of the case.
 
         keyword arguments:
         inst_dir -- /instantiations/"<benchmark>-<implementation>" (target directory)
@@ -106,10 +103,7 @@ class Implementation:
         (stdoutdata, stderrdata) = proc.communicate(input=None)
         return (proc.returncode, stdoutdata, stderrdata)
 
-
-    
-    # This function could receive ALL possible input data and run script could then receive an argument to determine which input data should be run.
-    # the instantiate file copies all the necessary source files to its own folder.
+ 
     def instantiate(self, inst_dir, platform_file):
         """Runs the instantiate_file which creates a run file to run the
         implementation and also runs the local Makefile.
@@ -150,10 +144,6 @@ class Implementation:
         return (proc.returncode, stdoutdata, stderrdata)
 
 class Benchmark:
-    # This class describes a benchmark which is an abstract problem 
-    # but not its specific implementation. A benchmark can in general have 
-    # many implementations and this object contains all the implementations
-    # in its self.implementations variable.
     def __init__(self, hipermarkdir, name, directory):
         """This initialization stores all the implementations and all the datasets of
         this benchmark. It thus collects info about this benchmark's implementations.
@@ -164,7 +154,7 @@ class Benchmark:
         the correct folder.
         
         keyword arguments:
-        hipermark_dir -- The directory from which this process was invoked.
+        hipermark_dir -- The directory from which this program was invoked.
         name -- name of benchmark as defined in the folder for its source code.
         directory -- directory of the benchmark. E.g. /benchmarks/OptionPricing
         """
@@ -215,6 +205,7 @@ class Benchmark:
             else:
                 raise Exception("%s may only contain folders, not files." %implrootpath )
 
+            
     def __gather_datasets(self):
         """Checks that each dataset in /benchmarks/<benchmark>/datasets/
         has the correct structure. Sets the self.datasets variable to an
@@ -237,25 +228,29 @@ class Benchmark:
                                            'expected_output' : read_json_file(outputfile)
                                          }
 
-def desc_triple(benchmark, implementation, dataset):
-    return "Benchmark %s, implementation %s, dataset %s" % (benchmark, implementation, dataset)
+def desc_quadruple(benchmark, implementation, dataset, run):
+    return "Benchmark %s, implementation %s, dataset %s, run %d" % (benchmark, implementation, dataset, run)
 
-def note_result(results, benchmark, implementation, dataset, runtime):
+def note_result(results, benchmark, implementation, dataset, run, runtime):
     """Stores the runtime of the execution of an implementation in a dictionary.
     This dictionary has triple's (benchmark, implementation, dataset) as key.
 
     keyword arguments:
     results -- name of dictionary in which runtime is saved.
-    benchmark -- 
-    implementation --
+    benchmark -- name of benchmark
+    implementation -- name of implementation
     dataset -- name of dataset.
+    run -- run counter
     runtime -- runtime as reported by ???
     """
-    results[(benchmark,implementation,dataset)] = runtime
+    # this means that this function adds an entry to a dictionary
+    results[(benchmark,implementation,dataset, run)] = runtime
 
+    # This function can be expanded to take iterations as argument.
 def run_some_benchmark_implementations(hipermark_dir,
                                        workdir,
                                        benchmarkdir,
+                                       number_of_runs,
                                        platform,
                                        run_implementation_fn,
                                        use_dataset_fn):
@@ -267,6 +262,7 @@ def run_some_benchmark_implementations(hipermark_dir,
     hipermark_dir -- The directory from which this process was invoked.
     workdir -- hipermark_dir/instantiations. Where the binaries are placed.
     benchmarkdir -- benchmarks/<benchmark>. Path of benchmark to run.
+    number_of_runs -- number of times that each case (dataset) will be run
     platform -- path of platform file.
     run_implementation_fn -- pointer to function run_implementation_fn
     use_dataset_fn --pointer to function use_dataset_fn
@@ -279,7 +275,7 @@ def run_some_benchmark_implementations(hipermark_dir,
     failed_data_insts = [] # all failed data compilations
     insts = []  # all succesfull implementation compilations.
     failed_insts = [] # all failed implementation compilations
-    results = {} # dict in Python. Like an associative array.
+    results = {} # dict in Python. Like an associative array. keys: bench, impl, datas, run_n
 
     # Running all "instantiate_data" files
     for impl in b.implementations:
@@ -335,89 +331,97 @@ def run_some_benchmark_implementations(hipermark_dir,
     # HIPERMARK_INPUT_NAME.
     for inst in data_insts:
         #inst_dir = os.path.join(workdir, "%s-%s" % (b.name, impl.name))
-        inst_dir = inst['instantiation_directory']
-        # SOME COUNTER COULD BE ADDED HERE!
-        run_output = os.path.join(inst_dir, "run_output/", inst['dataset'])
-        mkdir_p(run_output)
-        print("\nRunning %s" % run_output)
-        stdoutpath = os.path.join(run_output, "stdout.log")
-        stderrpath = os.path.join(run_output, "stderr.log")
-        resultpath = os.path.join(run_output, "result.json")
-        runtimepath = os.path.join(run_output, "runtime.txt")
-        with open(stdoutpath, "w") as stdout:
-            with open(stderrpath, "w") as stderr:
-                print("Output can be found in %s and %s" % (stdoutpath, stderrpath))
-                try:
-                    instantiate_env = os.environ.copy()
-                    #HIPERMARK_RESULT/RUNTIME: path for impl. to store result/runtime
-                    instantiate_env["HIPERMARK_INPUT_NAME"] = inst['dataset']
-                    instantiate_env["HIPERMARK_RESULT"] = resultpath
-                    instantiate_env["HIPERMARK_RUNTIME"] = runtimepath
-                    proc = subprocess.Popen(os.path.join(inst_dir, "run"),
-                                            env=instantiate_env,
-                                            stdout=stdout,
-                                            stderr=stderr,
-                                            stdin=subprocess.PIPE,
-                                            close_fds=True,
-                                            cwd=inst_dir)
-                    proc.stdin.close() # Make sure stdin EOFs.
-                    proc.wait()
-                except:
-                    note_result(results,
-                                inst['benchmark'],
-                                inst['implementation'],
-                                inst['dataset'],
-                                "could not run")
-                    print("Spoiler: failed")
-                    continue
-        if proc.returncode != 0:
-            note_result(results,
-                        inst['benchmark'],
-                        inst['implementation'],
-                        inst['dataset'],
-                        "non-zero exit code")
-            print("Spoiler: failed")
-            continue
-
-        try:
-            runtime = read_runtime(run_output)
-        except IOError:
-            note_result(results,
-                        inst['benchmark'],
-                        inst['implementation'],
-                        inst['dataset'],
-                        "no runtime measurement")
-            continue
-        except ValueError:
-            note_result(results,
-                        inst['benchmark'],
-                        inst['implementation'],
-                        inst['dataset'],
-                        "non-integer runtime measurement")
-            continue
-
-        try:
-            result = read_json_file(os.path.join(run_output, "result.json"))
-            expected = inst['expected_output']
-            if compare_json(result, expected):
-                note_result(results,
-                            inst['benchmark'],
-                            inst['implementation'],
-                            inst['dataset'],
-                            runtime)
-            else:
-                note_result(results,
-                            inst['benchmark'],
-                            inst['implementation'],
-                            inst['dataset'],
-                            "result did not match expected result")
-        except (IOError, ValueError):
-            note_result(results,
-                        inst['benchmark'],
-                        inst['implementation'],
-                        inst['dataset'],
-                        "cannot read result")
-    return (results, failed_data_insts)
+        inst_dir = inst['instantiation_directory'] #should not be changed by counter.
+        for run in range(1, number_of_runs+1):
+            run_output = os.path.join(inst_dir, "run_output/", inst['dataset'], "run"+str(run))
+            mkdir_p(run_output)
+            print("\nRunning %s" % run_output)
+            stdoutpath = os.path.join(run_output, "stdout.log")
+            stderrpath = os.path.join(run_output, "stderr.log")
+            resultpath = os.path.join(run_output, "result.json")
+            runtimepath = os.path.join(run_output, "runtime.txt")
+            with open(stdoutpath, "w") as stdout:
+                with open(stderrpath, "w") as stderr:
+                    print("Output can be found in %s and %s" % (stdoutpath, stderrpath))
+                    try:
+                        instantiate_env = os.environ.copy()
+                        #HIPERMARK_RESULT/RUNTIME: path for impl. to store result/runtime
+                        instantiate_env["HIPERMARK_INPUT_NAME"] = inst['dataset']
+                        instantiate_env["HIPERMARK_RESULT"] = resultpath
+                        instantiate_env["HIPERMARK_RUNTIME"] = runtimepath
+                        proc = subprocess.Popen(os.path.join(inst_dir, "run"),
+                                                env=instantiate_env,
+                                                stdout=stdout,
+                                                stderr=stderr,
+                                                stdin=subprocess.PIPE,
+                                                close_fds=True,
+                                                cwd=inst_dir)
+                        proc.stdin.close() # Make sure stdin EOFs.
+                        proc.wait()
+                    except:
+                        note_result(results,
+                                    inst['benchmark'],
+                                    inst['implementation'],
+                                    inst['dataset'],
+                                    run,
+                                    "could not run")
+                        # a call to note_result function adds an entry in the result function
+                        print("Spoiler: failed")
+                        continue
+                    if proc.returncode != 0:
+                        note_result(results,
+                                    inst['benchmark'],
+                                    inst['implementation'],
+                                    inst['dataset'],
+                                    run,
+                                    "non-zero exit code")
+                        print("Spoiler: failed")
+                        continue
+                    
+                    try:
+                        runtime = read_runtime(run_output)
+                    except IOError:
+                        note_result(results,
+                                    inst['benchmark'],
+                                    inst['implementation'],
+                                    inst['dataset'],
+                                    run,
+                                    "no runtime measurement")
+                        continue
+                    except ValueError:
+                        note_result(results,
+                                    inst['benchmark'],
+                                    inst['implementation'],
+                                    inst['dataset'],
+                                    run,
+                                    "non-integer runtime measurement")
+                        continue
+                    
+                    try:
+                        result = read_json_file(os.path.join(run_output, "result.json"))
+                        expected = inst['expected_output']
+                        if compare_json(result, expected):
+                            note_result(results,
+                                        inst['benchmark'],
+                                        inst['implementation'],
+                                        inst['dataset'],
+                                        run,
+                                        runtime)
+                        else:
+                            note_result(results,
+                                        inst['benchmark'],
+                                        inst['implementation'],
+                                        inst['dataset'],
+                                        run,
+                                        "result did not match expected result")
+                    except (IOError, ValueError):
+                        note_result(results,
+                                    inst['benchmark'],
+                                    inst['implementation'],
+                                    inst['dataset'],
+                                    run,
+                                    "cannot read result")
+    return (results, failed_data_insts) #returns the dictionary and more
 
 
 def read_runtime(output_dir):
@@ -502,6 +506,7 @@ if __name__ == '__main__':
     (benchmark, implementations, datasets) = what_to_run()
     instantiations_dir = "instantiations"
     platform_file = "config/platform_example.json"
+    number_of_runs = 2
 
     print("Assuming I am being run from main hipermark directory.")
     print("Will run benchmark %s." % benchmark)
@@ -515,6 +520,8 @@ if __name__ == '__main__':
         print("Will use all datasets.")
     else:
         print("Will use these datasets: %s" % datasets)
+
+    print("Each dataset will be run %d times" % number_of_runs)
 
     print("Will instantiate in %s." % instantiations_dir)
     print("Will use platform configuration %s." % platform_file)
@@ -537,6 +544,7 @@ if __name__ == '__main__':
         run_some_benchmark_implementations(hipermark_dir,
                                            os.path.join(hipermark_dir, instantiations_dir),
                                            os.path.join(hipermark_dir, benchmark),
+                                           number_of_runs,
                                            os.path.join(hipermark_dir, platform_file),
                                            run_implementation_fn,
                                            use_dataset_fn)
@@ -562,14 +570,31 @@ if __name__ == '__main__':
 
     print "\nFailed:"
     for f in failed:
-        (benchmark, implementation, dataset) = f
+        (benchmark, implementation, dataset, run) = f
         print("%s: %s" %
-              (desc_triple(benchmark, implementation, dataset),
+              (desc_quadruple(benchmark, implementation, dataset, run),
                failed[f]))
 
     print "\nSucceeded:"
     for s in successful:
-        (benchmark, implementation, dataset) = s
+        (benchmark, implementation, dataset, run) = s
         print("%s: %s" %
-              (desc_triple(benchmark, implementation, dataset),
+              (desc_quadruple(benchmark, implementation, dataset, run),
                successful[s]))
+
+
+    # # could loop over all implementations, datasets
+    # for impl in implementations:
+    #     for ds in implementations.datasets:
+            
+    
+    # # calculate mean:
+    # # build array of run times for matching cases
+
+    # if (number_of_runs > 1):
+    #     for s in successful:
+
+    # # Calculate average and std dev. of results. Somehow we need to iterate over those successful results that have the same benchmark, implementation, and dataset.
+
+    # def same_case (bench1, impl1, datas1, run1, benchmark2, implementation2, dataset2, run2):
+    #     return (bech1 == bech2) and (impl1 == impl2) and (datas1 == datas2)
