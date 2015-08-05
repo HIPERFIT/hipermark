@@ -5,6 +5,7 @@ import subprocess
 import json
 import sys
 import errno # needed to prevent error in exc.errno == errno.EEXIST
+import math
 
 def executable(fpath):
     """Returns true if the file exists and can be executed. """
@@ -231,21 +232,52 @@ class Benchmark:
 def desc_quadruple(benchmark, implementation, dataset, run):
     return "Benchmark %s, implementation %s, dataset %s, run %d" % (benchmark, implementation, dataset, run)
 
+def desc_triple(benchmark, implementation, dataset):
+    return "Benchmark %s, implementation %s, dataset %s" % (benchmark, implementation, dataset)
+
 def note_result(results, benchmark, implementation, dataset, run, runtime):
     """Stores the runtime of the execution of an implementation in a dictionary.
     This dictionary has triple's (benchmark, implementation, dataset) as key.
+    The values are stored in a list which indexes over the run counter.
 
     keyword arguments:
-    results -- name of dictionary in which runtime is saved.
-    benchmark -- name of benchmark
-    implementation -- name of implementation
-    dataset -- name of dataset.
-    run -- run counter
+    results -- name of dictionary in which runtime is saved (string)
+    benchmark -- name of benchmark (string)
+    implementation -- name of implementation (string)
+    dataset -- name of dataset. (string)
+    run -- run counter (int)
     runtime -- runtime as reported by ???
     """
+    # The values to the keys should be a list, and not a float.
+    # So the result of this function call should be to append the runtime list (stored in results)
+    # with the new result (stored in runtime).
     # this means that this function adds an entry to a dictionary
-    results[(benchmark,implementation,dataset, run)] = runtime
+    if run == 0:
+        results[(benchmark, implementation, dataset)] = []
+    results[(benchmark,implementation,dataset)].append(runtime)
+    # results[(benchmark,implementation,dataset, run)] = runtime
 
+def get_nth_moment (result_times, n):
+    """ 
+    Keyword values:
+    result_times -- list of result times (floats)
+    n -- integer describing that statistical moment of result_times which is returned
+    """
+    sum = 0
+    N = len(result_times)
+    for i in range(len(result_times)):
+        sum += result_times[i]**n
+    return sum/N
+    
+def get_average_and_stddev (result_times):
+    """ Returns average and stddev for a list.
+
+    Keyword values:
+    result_times -- list of result times (floats)
+    """
+    av = get_nth_moment(result_times, 1)
+    return (av, math.sqrt(get_nth_moment(result_times, 2) - av**2))
+    
     # This function can be expanded to take iterations as argument.
 def run_some_benchmark_implementations(hipermark_dir,
                                        workdir,
@@ -276,6 +308,7 @@ def run_some_benchmark_implementations(hipermark_dir,
     insts = []  # all succesfull implementation compilations.
     failed_insts = [] # all failed implementation compilations
     results = {} # dict in Python. Like an associative array. keys: bench, impl, datas, run_n
+    # results
 
     # Running all "instantiate_data" files
     for impl in b.implementations:
@@ -332,7 +365,7 @@ def run_some_benchmark_implementations(hipermark_dir,
     for inst in data_insts:
         #inst_dir = os.path.join(workdir, "%s-%s" % (b.name, impl.name))
         inst_dir = inst['instantiation_directory'] #should not be changed by counter.
-        for run in range(1, number_of_runs+1):
+        for run in range(number_of_runs):
             run_output = os.path.join(inst_dir, "run_output/", inst['dataset'], "run"+str(run))
             mkdir_p(run_output)
             print("\nRunning %s" % run_output)
@@ -506,7 +539,7 @@ if __name__ == '__main__':
     (benchmark, implementations, datasets) = what_to_run()
     instantiations_dir = "instantiations"
     platform_file = "config/platform_example.json"
-    number_of_runs = 2
+    number_of_runs = 10 # should this be a function argument?
 
     print("Assuming I am being run from main hipermark directory.")
     print("Will run benchmark %s." % benchmark)
@@ -559,31 +592,52 @@ if __name__ == '__main__':
         print(failed['stderr'])
         print("")
 
-    successful = {}
-    failed = {}
+    successful_quadruple = {}
+    successful_triple = {}
+    failed_quadruple = {}
 
-    for result in results:
-        if type(results[result]) is int:
-            successful[result] = results[result]
-        else:
-            failed[result] = results[result]
+    # this needs to be modified. Now all will be classified as failed since the results[result]
+    # now has type 'list'. Each non-failing result will have type int and the failing will have type
+    # str. We can loop over the indecies of the list which results[result] is. And from that, we can create a dict holding quadruple key values: benchmark, implementation, dataset, run.
+    for result_triple in results:
+        successful_counter = 0
+        # for 0 to number of runs per case.
+        for run in range(len(results[result_triple])):
+            run_desc = results[result_triple][run]
+            run_tuple = (run,)
+            result_quadruple = result_triple + run_tuple
+            if type(run_desc) is int:
+                successful_quadruple[result_quadruple] = run_desc
+                if successful_counter == 0:
+                    successful_triple[result_triple] = []
+                successful_counter += 1
+                successful_triple[result_triple].append(run_desc)
+            else:
+                failed_quadruple[result_quadruple] = run_desc
 
     print "\nFailed:"
-    for f in failed:
+    for f in failed_quadruple:
         (benchmark, implementation, dataset, run) = f
         print("%s: %s" %
               (desc_quadruple(benchmark, implementation, dataset, run),
-               failed[f]))
+               failed_quadruple[f]))
 
     print "\nSucceeded:"
-    for s in successful:
+    for s in successful_quadruple:
         (benchmark, implementation, dataset, run) = s
         print("%s: %s" %
               (desc_quadruple(benchmark, implementation, dataset, run),
-               successful[s]))
+               successful_quadruple[s]))
+
+    print "\nAverage Run Times:"
+    for s in successful_triple:
+        (benchmark, implementation, dataset) = s
+        av, stddev = get_average_and_stddev(successful_triple[s])
+        print("%s: Average time: %d, standard deviation: %d" % (desc_triple(benchmark, implementation, dataset), av, stddev))
+              
 
 
-    # # could loop over all implementations, datasets
+    # # could loop over all implementations, datasets 
     # for impl in implementations:
     #     for ds in implementations.datasets:
             
