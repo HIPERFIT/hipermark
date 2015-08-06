@@ -246,26 +246,23 @@ def note_result(results, benchmark, implementation, dataset, run, runtime):
     implementation -- name of implementation (string)
     dataset -- name of dataset. (string)
     run -- run counter (int)
-    runtime -- runtime as reported by ???
+    runtime -- runtime as reported by the implementation. Stored in a list in results.
     """
-    # The values to the keys should be a list, and not a float.
-    # So the result of this function call should be to append the runtime list (stored in results)
-    # with the new result (stored in runtime).
-    # this means that this function adds an entry to a dictionary
     if run == 0:
         results[(benchmark, implementation, dataset)] = []
     results[(benchmark,implementation,dataset)].append(runtime)
-    # results[(benchmark,implementation,dataset, run)] = runtime
 
 def get_nth_moment (result_times, n):
     """ 
+    Calculates the nth moment of a list.
+
     Keyword values:
     result_times -- list of result times (floats)
     n -- integer describing that statistical moment of result_times which is returned
     """
     sum = 0
     N = len(result_times)
-    for i in range(len(result_times)):
+    for i in range(N):
         sum += result_times[i]**n
     return sum/N
     
@@ -307,8 +304,8 @@ def run_some_benchmark_implementations(hipermark_dir,
     failed_data_insts = [] # all failed data compilations
     insts = []  # all succesfull implementation compilations.
     failed_insts = [] # all failed implementation compilations
-    results = {} # dict in Python. Like an associative array. keys: bench, impl, datas, run_n
-    # results
+    results = {} # dict in Python. Like an associative array. key: (bench, impl, dataset)
+    # value: list of runtimes. Manipulated through note_result function.
 
     # Running all "instantiate_data" files
     for impl in b.implementations:
@@ -364,7 +361,7 @@ def run_some_benchmark_implementations(hipermark_dir,
     # HIPERMARK_INPUT_NAME.
     for inst in data_insts:
         #inst_dir = os.path.join(workdir, "%s-%s" % (b.name, impl.name))
-        inst_dir = inst['instantiation_directory'] #should not be changed by counter.
+        inst_dir = inst['instantiation_directory']
         for run in range(number_of_runs):
             run_output = os.path.join(inst_dir, "run_output/", inst['dataset'], "run"+str(run))
             mkdir_p(run_output)
@@ -378,7 +375,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                     print("Output can be found in %s and %s" % (stdoutpath, stderrpath))
                     try:
                         instantiate_env = os.environ.copy()
-                        #HIPERMARK_RESULT/RUNTIME: path for impl. to store result/runtime
+                        #HIPERMARK_RESULT/RUNTIME: path for implementation to store result/runtime
                         instantiate_env["HIPERMARK_INPUT_NAME"] = inst['dataset']
                         instantiate_env["HIPERMARK_RESULT"] = resultpath
                         instantiate_env["HIPERMARK_RUNTIME"] = runtimepath
@@ -398,7 +395,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                                     inst['dataset'],
                                     run,
                                     "could not run")
-                        # a call to note_result function adds an entry in the result function
+                        # a call to note_result function adds an entry in the result dict.
                         print("Spoiler: failed")
                         continue
                     if proc.returncode != 0:
@@ -539,7 +536,7 @@ if __name__ == '__main__':
     (benchmark, implementations, datasets) = what_to_run()
     instantiations_dir = "instantiations"
     platform_file = "config/platform_example.json"
-    number_of_runs = 10 # should this be a function argument?
+    number_of_runs = 2 # should this be a function argument?
 
     print("Assuming I am being run from main hipermark directory.")
     print("Will run benchmark %s." % benchmark)
@@ -592,18 +589,15 @@ if __name__ == '__main__':
         print(failed['stderr'])
         print("")
 
+    # These should due to consistency be treated as immutables!
     successful_quadruple = {}
     successful_triple = {}
     failed_quadruple = {}
 
-    # this needs to be modified. Now all will be classified as failed since the results[result]
-    # now has type 'list'. Each non-failing result will have type int and the failing will have type
-    # str. We can loop over the indecies of the list which results[result] is. And from that, we can create a dict holding quadruple key values: benchmark, implementation, dataset, run.
     for result_triple in results:
         successful_counter = 0
-        # for 0 to number of runs per case.
         for run in range(len(results[result_triple])):
-            run_desc = results[result_triple][run]
+            run_desc = results[result_triple][run] # int for success, text string for fail
             run_tuple = (run,)
             result_quadruple = result_triple + run_tuple
             if type(run_desc) is int:
@@ -614,6 +608,8 @@ if __name__ == '__main__':
                 successful_triple[result_triple].append(run_desc)
             else:
                 failed_quadruple[result_quadruple] = run_desc
+
+    # DO NOT MODIFY successful_triple or successful_quadruple after this line!
 
     print "\nFailed:"
     for f in failed_quadruple:
@@ -633,9 +629,10 @@ if __name__ == '__main__':
     for s in successful_triple:
         (benchmark, implementation, dataset) = s
         av, stddev = get_average_and_stddev(successful_triple[s])
-        print("%s: Average time: %d, standard deviation: %d" % (desc_triple(benchmark, implementation, dataset), av, stddev))
+        rel_stddev = stddev/float(av)
+        print("%s: Average time: %d, standard deviation: %d, relative standard deviation: %.2E" % (desc_triple(benchmark, implementation, dataset), av, stddev, rel_stddev))
               
-
+# get relative std deviation.
 
     # # could loop over all implementations, datasets 
     # for impl in implementations:
