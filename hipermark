@@ -347,7 +347,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                                       'retcode' : retcode,
                                       'stdout' : stdout,
                                       'stderr' : stderr})
-            print("Spoiler: failed")
+            print("Ran instantiate. Spoiler: failed")
         else:
             insts.append({ 'benchmark' : b.name,
                         'implementation' : impl.name,
@@ -390,7 +390,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                                                     cwd=inst_dir) #run a case
                             proc.stdin.close() # Make sure stdin EOFs.
                             proc.wait()
-                            returncode.write(str(proc.returncode))
+                            returncode.write(str(proc.returncode) + "\n")
                         except:
                             note_result(results,
                                         inst['benchmark'],
@@ -435,7 +435,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                             expected = inst['expected_output']
                             match = compare_json(result, expected)
                             f = open(validationpath, "w")
-                            f.write(str(int(match)))
+                            f.write(str(int(match)) + "\n")
                             f.close()
                             if match:
                                 note_result(results,
@@ -460,9 +460,10 @@ def run_some_benchmark_implementations(hipermark_dir,
                                         "cannot read result")
                             # should validationpath file be written to in this case?
                             f = open(validationpath, "w")
-                            f.write("cannot read result")
+                            f.write("cannot read result\n")
                             f.close()
-    return (results, failed_data_insts) #returns the dictionary and more
+                            #SHOULD ALSO RETURN failed_data_insts
+    return (results, failed_insts, failed_data_insts) 
                         
                         
 def read_runtime(output_dir):
@@ -547,7 +548,7 @@ if __name__ == '__main__':
     (benchmark, implementations, datasets) = what_to_run()
     instantiations_dir = "instantiations"
     platform_file = "config/platform_example.json"
-    number_of_runs = 2 # should this be a function argument?
+    number_of_runs = 1 # should this be a function argument?
 
     print("Assuming I am being run from main hipermark directory.")
     print("Will run benchmark %s." % benchmark)
@@ -581,7 +582,7 @@ if __name__ == '__main__':
         else:
             return dataset in datasets
 
-    (results, failed_to_instantiate) = (
+    (results, failed_to_instantiate, failed_to_instantiate_data) = (
         run_some_benchmark_implementations(hipermark_dir,
                                            os.path.join(hipermark_dir, instantiations_dir),
                                            os.path.join(hipermark_dir, benchmark),
@@ -591,9 +592,18 @@ if __name__ == '__main__':
                                            use_dataset_fn)
     )
 
+    for failed in failed_to_instantiate_data:
+        print("Failed to instantiate this dataset: benchmark %s, implementation %s, dataset %s. Exit code was %d." %
+              (failed['benchmark'], failed['implementation'], failed['dataset'], failed['retcode']))
+        print("Stdout\n")
+        print(failed['stdout'])
+        print("Stderr\n")
+        print(failed['stderr'])
+        print("")
+
     for failed in failed_to_instantiate:
-        print("Failed to instantiate implementation %s with dataset %s; exit code %d." %
-              (failed['implementation'], failed['dataset'], failed['retcode']))
+        print("Failed to instantiate benchmark %s, implementation %s. Exit code was %d." %
+              (failed['benchmark'], failed['implementation'], failed['retcode']))
         print("Stdout\n")
         print(failed['stdout'])
         print("Stderr\n")
@@ -642,21 +652,3 @@ if __name__ == '__main__':
         av, stddev = get_average_and_stddev(successful_triple[s])
         rel_stddev = stddev/float(av)
         print("%s: Average time: %d, standard deviation: %d, relative standard deviation: %.2E" % (desc_triple(benchmark, implementation, dataset), av, stddev, rel_stddev))
-              
-# get relative std deviation.
-
-    # # could loop over all implementations, datasets 
-    # for impl in implementations:
-    #     for ds in implementations.datasets:
-            
-    
-    # # calculate mean:
-    # # build array of run times for matching cases
-
-    # if (number_of_runs > 1):
-    #     for s in successful:
-
-    # # Calculate average and std dev. of results. Somehow we need to iterate over those successful results that have the same benchmark, implementation, and dataset.
-
-    # def same_case (bench1, impl1, datas1, run1, benchmark2, implementation2, dataset2, run2):
-    #     return (bech1 == bech2) and (impl1 == impl2) and (datas1 == datas2)
