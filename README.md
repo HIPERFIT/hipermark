@@ -1,7 +1,7 @@
 #################################################
 # Overview of hipermark Architecture #
 #################################################
-
+ 
 Hipermark works with this hierarchy:
 
 1. Benchmark: A specific mathematical problem or function (in the mathematical sense) which can be solved by a computer. The specific solutions to this problem can be written in many different languages and can use parallel or sequential logic. It is called a benchmark because it provides a basis for which to compare different implementations of solutions to this problem.
