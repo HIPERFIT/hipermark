@@ -266,8 +266,8 @@ def get_nth_moment (result_times, n):
     N = len(result_times)
     for i in range(N):
         suml += result_times[i]**n
-    return (suml/N)
-    
+    return (suml/float(N))
+
 def get_average_and_stddev (result_times):
     """ Returns average and stddev for a list.
 
@@ -275,12 +275,6 @@ def get_average_and_stddev (result_times):
     result_times -- list of result times (floats)
     """
     av = get_nth_moment(result_times, 1)
-    print(result_times)
-    print(av)
-    print(av**2)
-    print(get_nth_moment(result_times, 2))
-    print(get_nth_moment(result_times, 2) - av**2)
-    print(math.sqrt(get_nth_moment(result_times, 2) - av**2))
     return (av, math.sqrt(get_nth_moment(result_times, 2) - av**2))
 
 def find_run_counter(target_dir):
