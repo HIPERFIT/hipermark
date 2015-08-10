@@ -6,6 +6,7 @@ import json
 import sys
 import errno # needed to prevent error in exc.errno == errno.EEXIST
 import math
+# The 'six' library could be imported since it is compatible with both P2 and P3.
 
 def executable(fpath):
     """Returns true if the file exists and can be executed. """
@@ -81,7 +82,7 @@ class Implementation:
         """
         if not os.path.isdir(inst_dir):
             mkdir_p(inst_dir)
-
+        
         # HIPERMARK_LIB_DIR: path of main library. /lib/
         # HIPERMARK_INPUT: path of input file. /benchmarks/<benchmark>/datasets/<dataset>/input.json
         # HIPERMARK_INPUT_NAME: Name of the folder in which the dataset was contained. This
@@ -230,11 +231,12 @@ class Benchmark:
                                          }
 
 def desc_quadruple(benchmark, implementation, dataset, run):
-    return "Benchmark %s, implementation %s, dataset %s, run %d" % (benchmark, implementation, dataset, run)
+    return "Benchmark %s, implementation %s, dataset %s, run %d (of this execution)" % (benchmark, implementation, dataset, run)
 
 def desc_triple(benchmark, implementation, dataset):
     return "Benchmark %s, implementation %s, dataset %s" % (benchmark, implementation, dataset)
 
+# This is a local variable that is only used in evaluation of this execution. For serious data analysis, the folder structure is used.
 def note_result(results, benchmark, implementation, dataset, run, runtime):
     """Stores the runtime of the execution of an implementation in a dictionary.
     This dictionary has triple's (benchmark, implementation, dataset) as key.
@@ -248,7 +250,7 @@ def note_result(results, benchmark, implementation, dataset, run, runtime):
     run -- run counter (int)
     runtime -- runtime as reported by the implementation. Stored in a list in results.
     """
-    if run == 0:
+    if not((benchmark, implementation, dataset) in results.keys()):
         results[(benchmark, implementation, dataset)] = []
     results[(benchmark,implementation,dataset)].append(runtime)
 
@@ -260,11 +262,11 @@ def get_nth_moment (result_times, n):
     result_times -- list of result times (floats)
     n -- integer describing that statistical moment of result_times which is returned
     """
-    sum = 0
+    suml = 0
     N = len(result_times)
     for i in range(N):
-        sum += result_times[i]**n
-    return sum/N
+        suml += result_times[i]**n
+    return (suml/N)
     
 def get_average_and_stddev (result_times):
     """ Returns average and stddev for a list.
@@ -273,7 +275,31 @@ def get_average_and_stddev (result_times):
     result_times -- list of result times (floats)
     """
     av = get_nth_moment(result_times, 1)
+    print(result_times)
+    print(av)
+    print(av**2)
+    print(get_nth_moment(result_times, 2))
+    print(get_nth_moment(result_times, 2) - av**2)
+    print(math.sqrt(get_nth_moment(result_times, 2) - av**2))
     return (av, math.sqrt(get_nth_moment(result_times, 2) - av**2))
+
+def find_run_counter(target_dir):
+    dirlist = os.listdir(target_dir)
+    max_number = 0
+    empty = True
+    try:
+        a = []
+        for path in dirlist:
+            empty = False
+            b = int(path)
+            if b < 0:
+                exit("Only non-negative run numbers (i.e., directory names) are allowed in %s." % target_dir)
+            a.append(b)
+    except ValueError:
+        exit("The folder %s may only contain folders with integer name." % target_dir)
+    if not empty:
+        max_number = max(a) + 1
+    return max_number
     
 def run_some_benchmark_implementations(hipermark_dir,
                                        workdir,
@@ -288,7 +314,7 @@ def run_some_benchmark_implementations(hipermark_dir,
     
     keyword arguments:
     hipermark_dir -- The directory from which this process was invoked.
-    workdir -- hipermark_dir/instantiations. Where the binaries are placed.
+    workdir -- Folder where instantiations (binaries and other) are stored.
     benchmarkdir -- benchmarks/<benchmark>. Path of benchmark to run.
     number_of_runs -- number of times that each case (dataset) will be run
     platform -- path of platform file.
@@ -306,11 +332,14 @@ def run_some_benchmark_implementations(hipermark_dir,
     results = {} # dict in Python. Like an associative array. key: (bench, impl, dataset)
     # value: list of runtimes. Manipulated through note_result function.
 
+    # Things are overwritten here.
     # Running all "instantiate_data" files
     for impl in b.implementations:
         if not run_implementation_fn(impl):
             continue
-        inst_dir = os.path.join(workdir, "%s-%s" % (b.name, impl.name))
+        # the os.getcwd ensures that inst_dir is absolute path.
+        # If user has specified absolute path, then the os.getcwd() is ignored.
+        inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s" % (b.name, impl.name))
         for dataset in b.datasets:
             if not use_dataset_fn(dataset):
                 continue
@@ -337,9 +366,9 @@ def run_some_benchmark_implementations(hipermark_dir,
     for impl in b.implementations:
         if not run_implementation_fn(impl):
             continue
-        inst_dir = os.path.join(workdir, "%s-%s" % (b.name, impl.name))
+        inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s" % (b.name, impl.name))
         print("Instantiating source code in %s" % inst_dir)
-        (retcode, stdout, stderr) = impl.instantiate(inst_dir, platform)
+        (retcode, stdout, stderr) = impl.instantiate(inst_dir, platform)#compile source code
         if retcode != 0:
             failed_insts.append({ 'benchmark' : b.name,
                                       'implementation' : impl.name,
@@ -358,11 +387,14 @@ def run_some_benchmark_implementations(hipermark_dir,
     # is executed for each dataset. 
     # This execution should allow run to take an argument in the form of
     # HIPERMARK_INPUT_NAME.
+    # Here, we could start by finding first_run_number by looking at what the folder contains.
     for inst in data_insts:
-        #inst_dir = os.path.join(workdir, "%s-%s" % (b.name, impl.name))
         inst_dir = inst['instantiation_directory']
-        for run in range(number_of_runs):
-            run_output = os.path.join(inst_dir, "run_output/", inst['dataset'], "run"+str(run))
+        path_for_outputs = os.path.join(inst_dir, "run_output/", inst['dataset'])
+        mkdir_p(path_for_outputs)
+        first_run_counter = find_run_counter(path_for_outputs)
+        for run in range(first_run_counter, number_of_runs + first_run_counter):
+            run_output = os.path.join(inst_dir, "run_output/", inst['dataset'], str(run))
             mkdir_p(run_output)
             print("\nRunning %s" % run_output)
             stdoutpath = os.path.join(run_output, "stdout.log")
@@ -527,17 +559,32 @@ def compare_json(json1, json2):
 
     return json1 == json2
 
-def what_to_run():
+def find_target_dir_and_what_to_run():
+    """ Returns the implementations and dataset to run. It should be checked that the implementations, datasets, etc. exists and an error should be returned if they do not.
+
+    Arguments can be seperated by commas: "arg1,arg2" etc.
+
+    Return values:
+    ret1 -- folder where instantiations should be placed
+    ret2 -- number of runs per case
+    ret3 -- folder of specific benchmark. E.g., "benchmarks/CalibVolDiff".
+    ret4 -- name of implementation. E.g., "cpp_sequential".
+    ret5 -- name of dataset. E.g., "small".
+    """
     if len(sys.argv) == 1:
-        return ("benchmarks/CalibVolDiff", None, None)
+        return ("instantiations", 1, "benchmarks/CalibVolDiff", None, None)
     elif len(sys.argv) == 2:
-        return (sys.argv[1], None, None)
+        return (sys.argv[1], 1, "benchmarks/CalibVolDiff", None, None)
     elif len(sys.argv) == 3:
-        return (sys.argv[1], sys.argv[2].split(','), None)
+        return (sys.argv[1], int(sys.argv[2]), "benchmarks/CalibVolDiff", None, None)
     elif len(sys.argv) == 4:
-        return (sys.argv[1], sys.argv[2].split(','), sys.argv[3].split(','))
+        return (sys.argv[1], int(sys.argv[2]), sys.argv[3], None, None)
+    elif len(sys.argv) == 5:
+        return (sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4].split(','), None)
+    elif len(sys.argv) == 6:
+        return (sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4].split(','), sys.argv[5].split(','))
     else:
-        exit("Usage: %s [benchmark] [implementation1,implementation2,...] [dataset1,dataset2,...]" %
+        exit("Usage: %s <target_directory> [number_of_runs_per_case] [benchmark] [implementation1,implementation2,...] [dataset1,dataset2,...]" %
              sys.argv[0])
 
 if __name__ == '__main__':
@@ -545,12 +592,13 @@ if __name__ == '__main__':
     which it will run. It then runs these benchmarks and prints the results from stdout 
     and from stderr.
     """
-    (benchmark, implementations, datasets) = what_to_run()
-    instantiations_dir = "instantiations"
+
+    (instantiations_dir, number_of_runs, benchmark, implementations, datasets) = find_target_dir_and_what_to_run()
     platform_file = "config/platform_example.json"
-    number_of_runs = 1 # should this be a function argument?
 
     print("Assuming I am being run from main hipermark directory.")
+    
+    # somewhere it must be checked that these benchmarks and these implementations exist.
     print("Will run benchmark %s." % benchmark)
 
     if implementations is None:
@@ -563,11 +611,11 @@ if __name__ == '__main__':
     else:
         print("Will use these datasets: %s" % datasets)
 
-    print("Each dataset will be run %d times" % number_of_runs)
+    print("Each case will be run %d times" % number_of_runs)
 
     print("Will instantiate in %s." % instantiations_dir)
     print("Will use platform configuration %s." % platform_file)
-    hipermark_dir = os.getcwd()
+    hipermark_dir = os.getcwd() # current folder. Is used to set workdir
 
     #Pointers to these functions are passed as arguments below.
     def run_implementation_fn(impl):
@@ -584,7 +632,7 @@ if __name__ == '__main__':
 
     (results, failed_to_instantiate, failed_to_instantiate_data) = (
         run_some_benchmark_implementations(hipermark_dir,
-                                           os.path.join(hipermark_dir, instantiations_dir),
+                                           instantiations_dir,
                                            os.path.join(hipermark_dir, benchmark),
                                            number_of_runs,
                                            os.path.join(hipermark_dir, platform_file),
@@ -632,21 +680,21 @@ if __name__ == '__main__':
 
     # DO NOT MODIFY successful_triple or successful_quadruple after this line!
 
-    print "\nFailed:"
+    print("\nFailed:")
     for f in failed_quadruple:
         (benchmark, implementation, dataset, run) = f
         print("%s: %s" %
               (desc_quadruple(benchmark, implementation, dataset, run),
                failed_quadruple[f]))
 
-    print "\nSucceeded:"
+    print("\nSucceeded:")
     for s in successful_quadruple:
         (benchmark, implementation, dataset, run) = s
         print("%s: %s" %
               (desc_quadruple(benchmark, implementation, dataset, run),
                successful_quadruple[s]))
 
-    print "\nAverage Run Times:"
+    print("\nAverage Run Times:")
     for s in successful_triple:
         (benchmark, implementation, dataset) = s
         av, stddev = get_average_and_stddev(successful_triple[s])
