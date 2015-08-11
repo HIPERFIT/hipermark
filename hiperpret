@@ -138,3 +138,7 @@ print(run)
 print(run_time)
 print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, run number: %d is: %d" % (bm.name, imp.name, case.dataset_name, run.run, run.runtime))
 print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, run number: %d is: %d" % (run.benchmark_name, run.implementation_name, run.dataset_name, run.run, run.runtime))
+
+# a case can be interpreted meaning that the independant variable is run number. No uncertainty.
+# an implementation can be interpreted meaning that the independent variable is dataset name. The uncertainty is the observed uncertainty by iterating over the run numbers.
+# a benchmark can be interpreted such that the independent variable is both implementation and dataset name. A 3-D plot could prob. be made. Uncertainty as above. 
