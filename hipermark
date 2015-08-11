@@ -693,4 +693,4 @@ if __name__ == '__main__':
         (benchmark, implementation, dataset) = s
         av, stddev = get_average_and_stddev(successful_triple[s])
         rel_stddev = stddev/float(av)
-        print("%s: Average time: %d, standard deviation: %d, relative standard deviation: %.2E" % (desc_triple(benchmark, implementation, dataset), av, stddev, rel_stddev))
+        print("%s: Average time: %d, standard deviation: %.1f, relative standard deviation: %.1E" % (desc_triple(benchmark, implementation, dataset), av, stddev, rel_stddev))

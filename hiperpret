@@ -1,0 +1,140 @@
+#!/usr/bin/env python
+
+import os
+import sys
+
+rundir_content = ["result.json","returncode.txt","runtime.txt","stderr.log","stdout.log","validation.txt"]
+
+class Run:
+    def __init__(self, benchmark_name,
+                 implementation_name,
+                 dataset_name,
+                 runnum,
+                 directory):
+        self.benchmark_name = benchmark_name
+        self.implementation_name = implementation_name
+        self.dataset_name = dataset_name
+        self.run = int(runnum)
+        self.directory = directory
+        dircontents = os.listdir(self.directory)
+        N = len(rundir_content)
+        for i in range(N):
+            if not rundir_content[i] in dircontents:
+                raise Exception("The folder %s does not contain the file %s." % (self.directory, rundir_content[i]))
+        with open(os.path.join(self.directory, rundir_content[1]), "r") as retcode_file:
+            with open(os.path.join(self.directory, rundir_content[2]), "r") as runtime_file:
+                with open(os.path.join(self.directory, rundir_content[5]), "r") as validation_file:
+                    try:
+                        self.retcode = int(retcode_file.read())
+                        self.runtime = int(runtime_file.read())
+                        self.validation = int(validation_file.read())
+                    except ValueError:
+                        raise Exception("The content of either the %s, %s, or %s was not an integer." % (rundir_content[1], rundir_content[2], rundir_content[5]))
+
+        
+
+class Case:
+    def __init__(self, benchmark_name, implementation_name, dataset_name, directory):
+        self.benchmark_name = benchmark_name
+        self.implementation_name = implementation_name
+        self.dataset_name = dataset_name
+        self.directory = directory
+        self.runs = []
+        dircontents = os.listdir(self.directory)
+        for run in dircontents:
+            try:
+                runnum = str(run)
+                rundir = os.path.join(self.directory, run)
+                if not os.path.isdir(rundir):
+                    raise Exception("The folder %s may only contain folders. %s is not a folder." % (self.directory, rundir))
+                if runnum < 0:
+                    raise Exception("Folder names in %s must be non-negative integers." % self.directory)
+                self.runs.append(Run(self.benchmark_name,
+                                     self.implementation_name,
+                                     self.dataset_name,
+                                     runnum,
+                                     rundir))
+            except ValueError:
+                raise Exception("The folder %s may only contain folders with integer names.")
+        
+
+
+class Implementation:
+    def __init__(self, benchmark_name, name, directory):
+        self.benchmark_name = benchmark_name
+        self.name = name
+        self.directory = directory
+        self.datasets = [] # unnecessary? 
+        self.cases = []
+        print("Name: %s, %s. Directory: %s" % (self.benchmark_name, self.name, self.directory))
+        #dircontents = os.listdir(self.directory)
+        run_outputdir = os.path.join(self.directory, "run_output")
+        if not os.path.isdir(run_outputdir):
+            raise Exception("The implementation folders must contain a \"run_output\" folder. %s does not." % self.directory)
+        dircontents = os.listdir(run_outputdir)
+        for ds in dircontents:
+            datasetdir = os.path.join(run_outputdir, ds)
+            if not os.path.isdir(datasetdir):
+                raise Exception("The content of %s must be folders with dataset names. But %s is not a folder." % (run_outputdir, ds))
+            self.datasets.append(ds)
+            self.cases.append(Case(benchmark_name,
+                                   self.name,
+                                   ds,
+                                   datasetdir))
+
+            
+        # The run_counters give names to the folders in a dataset folder.
+        # The run_counter folder contains: result.json, returncode.txt, runtime.txt,
+        # stderr.log, stdout.log, and validation.txt.
+        # New classes for both cases and runs could be made.
+
+class Benchmark:
+    def __init__(self, name, directory):
+        # basic sanity check:
+          # Should the benchmark dir only contain folders?
+        # The folders contained in benchmark_dir is assumed to contain implementations.
+        self.name = name
+        self.directory = directory
+        self.implementations = []
+        dircontents = os.listdir(self.directory)
+        for impl in dircontents:
+            impldir = os.path.join(self.directory, impl)
+            if not os.path.isdir(impldir):
+                raise Exception("The folder containing the %s benchmark must only contain directories. %s is not a directory." % (self.name, impldir))
+            implname = os.path.basename(impldir)
+            self.implementations.append(Implementation(self.name,
+                                                       implname,
+                                                       impldir))
+    def interpret_benchmark():
+        return 0
+            
+# Shoudl dicts instead of lists be used.
+    
+rootdir = os.getcwd()
+print("rootdir is: %s" % rootdir)
+if len(sys.argv) != 2:
+    raise Exception("Usage %s <directory_containing_hipermark_results>" % sys.argv[0])
+instdir = sys.argv[1]
+if not os.path.isdir(instdir):
+    raise Exception("Directory %s could not be found." % sys.argv[1])
+dircontents = os.listdir(instdir)
+b = []
+for bm in dircontents:
+    bmdir = os.path.join(rootdir, instdir, bm)
+    if not os.path.isdir(bmdir):
+        raise Exception("Only directories may be placed in %s. %s is not a directory." % (sys.argv[1], bm))
+    name = os.path.basename(os.path.normpath(bm))
+    b.append(Benchmark(name, bmdir))
+
+bm = b[0]
+imp = bm.implementations[0]
+case = imp.cases[0]
+run = case.runs[0]
+run_time = run.runtime
+print(bm)
+print(imp)
+print(case)
+print(run)
+print(run_time)
+print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, run number: %d is: %d" % (bm.name, imp.name, case.dataset_name, run.run, run.runtime))
+print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, run number: %d is: %d" % (run.benchmark_name, run.implementation_name, run.dataset_name, run.run, run.runtime))
