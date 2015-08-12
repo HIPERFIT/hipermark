@@ -6,6 +6,7 @@ import json
 import sys
 import errno # needed to prevent error in exc.errno == errno.EEXIST
 import math
+import time
 # The 'six' library could be imported since it is compatible with both P2 and P3.
 
 def executable(fpath):
@@ -287,10 +288,12 @@ def find_run_counter(target_dir):
             empty = False
             b = int(path)
             if b < 0:
-                exit("Only non-negative run numbers (i.e., directory names) are allowed in %s." % target_dir)
+                raise Exception("Only non-negative run numbers (i.e., directory names) are allowed in %s." %
+                                target_dir)
             a.append(b)
     except ValueError:
-        exit("The folder %s may only contain folders with integer name." % target_dir)
+        raise Exception("The folder %s may only contain folders with integer name." %
+                        target_dir)
     if not empty:
         max_number = max(a) + 1
     return max_number
@@ -318,7 +321,9 @@ def run_some_benchmark_implementations(hipermark_dir,
 
     # Instantiates the benchmark objects which contain the implementation objects. 
     # Does not compile.
-    b = Benchmark(hipermark_dir, os.path.basename(os.path.normpath(benchmarkdir)), benchmarkdir)
+    b = Benchmark(hipermark_dir,
+                  os.path.basename(os.path.normpath(benchmarkdir)),
+                  benchmarkdir)
     data_insts = []  # all succesfull data compilations.
     failed_data_insts = [] # all failed data compilations
     insts = []  # all succesfull implementation compilations.
@@ -338,7 +343,9 @@ def run_some_benchmark_implementations(hipermark_dir,
             if not use_dataset_fn(dataset):
                 continue
             print("Instantiating dataset \"%s\" in %s" % (dataset, inst_dir))
-            (retcode, stdout, stderr) = impl.instantiate_data(inst_dir, b.datasets[dataset]['input_file'], dataset) #compilation of dataset.
+            (retcode, stdout, stderr) = impl.instantiate_data(inst_dir,
+                                                              b.datasets[dataset]['input_file'],
+                                                              dataset) #compilation of dataset.
             if retcode != 0:
                 failed_data_insts.append({ 'benchmark' : b.name,
                                       'implementation' : impl.name,
@@ -397,98 +404,102 @@ def run_some_benchmark_implementations(hipermark_dir,
             validationpath = os.path.join(run_output, "validation.txt")
             resultpath = os.path.join(run_output, "result.json")
             runtimepath = os.path.join(run_output, "runtime.txt")
+            timestamppath = os.path.join(run_output, "date.txt")
             with open(stdoutpath, "w") as stdout:
                 with open(stderrpath, "w") as stderr:
-                    with open(returncodepath, "w") as returncode:
-                        print("Output can be found in %s and %s" % (stdoutpath, stderrpath))
-                        try:
-                            instantiate_env = os.environ.copy()
-                            #HIPERMARK_RESULT/RUNTIME: path for implementation to store result/runtime
-                            instantiate_env["HIPERMARK_INPUT_NAME"] = inst['dataset']
-                            instantiate_env["HIPERMARK_RESULT"] = resultpath
-                            instantiate_env["HIPERMARK_RUNTIME"] = runtimepath
-                            proc = subprocess.Popen(os.path.join(inst_dir, "run"),
-                                                    env=instantiate_env,
-                                                    stdout=stdout,
-                                                    stderr=stderr,
-                                                    stdin=subprocess.PIPE,
-                                                    close_fds=True,
-                                                    cwd=inst_dir) #run a case
-                            proc.stdin.close() # Make sure stdin EOFs.
-                            proc.wait()
-                            returncode.write(str(proc.returncode) + "\n")
-                        except:
-                            note_result(results,
-                                        inst['benchmark'],
-                                        inst['implementation'],
-                                        inst['dataset'],
-                                        run,
-                                        "could not run")
-                            # a call to note_result function adds an entry in the result dict.
-                            print("Spoiler: failed")
-                            continue
-                        if proc.returncode != 0:
-                            note_result(results,
-                                        inst['benchmark'],
-                                        inst['implementation'],
-                                        inst['dataset'],
-                                        run,
-                                        "non-zero exit code")
-                            print("Spoiler: failed")
-                            continue
-                        
-                        try:
-                            runtime = read_runtime(run_output)
-                        except IOError:
-                            note_result(results,
-                                        inst['benchmark'],
-                                        inst['implementation'],
-                                        inst['dataset'],
-                                        run,
-                                        "no runtime measurement")
-                            continue
-                        except ValueError:
-                            note_result(results,
-                                        inst['benchmark'],
-                                        inst['implementation'],
-                                        inst['dataset'],
-                                        run,
-                                        "non-integer runtime measurement")
-                            continue
-                        
-                        try:
-                            result = read_json_file(os.path.join(run_output, "result.json"))
-                            expected = inst['expected_output']
-                            match = compare_json(result, expected)
-                            f = open(validationpath, "w")
-                            f.write(str(int(match)) + "\n")
-                            f.close()
-                            if match:
+                    with open(returncodepath, "w") as returncode_file:
+                        with open(timestamppath, "w") as timestamp_file:
+                            print("Output can be found in %s and %s" % (stdoutpath, stderrpath))
+                            timestamp = time.time()
+                            timestamp_file.write(str(timestamp) + "\n")
+                            try:
+                                instantiate_env = os.environ.copy()
+                                #HIPERMARK_RESULT/RUNTIME: path for implementation to store result/runtime
+                                instantiate_env["HIPERMARK_INPUT_NAME"] = inst['dataset']
+                                instantiate_env["HIPERMARK_RESULT"] = resultpath
+                                instantiate_env["HIPERMARK_RUNTIME"] = runtimepath
+                                proc = subprocess.Popen(os.path.join(inst_dir, "run"),
+                                                        env=instantiate_env,
+                                                        stdout=stdout,
+                                                        stderr=stderr,
+                                                        stdin=subprocess.PIPE,
+                                                        close_fds=True,
+                                                        cwd=inst_dir) #run a case
+                                proc.stdin.close() # Make sure stdin EOFs.
+                                proc.wait()
+                                returncode_file.write(str(proc.returncode) + "\n")
+                            except:
                                 note_result(results,
                                             inst['benchmark'],
                                             inst['implementation'],
                                             inst['dataset'],
                                             run,
-                                            runtime)
-                            else:
+                                            "could not run")
+                                # a call to note_result function adds an entry in the result dict.
+                                print("Spoiler: failed")
+                                continue
+                            if proc.returncode != 0:
                                 note_result(results,
                                             inst['benchmark'],
                                             inst['implementation'],
                                             inst['dataset'],
                                             run,
-                                            "result did not match expected result")
-                        except (IOError, ValueError):
-                            note_result(results,
-                                        inst['benchmark'],
-                                        inst['implementation'],
-                                        inst['dataset'],
-                                        run,
-                                        "cannot read result")
-                            # should validationpath file be written to in this case?
-                            f = open(validationpath, "w")
-                            f.write("cannot read result\n")
-                            f.close()
-                            #SHOULD ALSO RETURN failed_data_insts
+                                            "non-zero exit code")
+                                print("Spoiler: failed")
+                                continue
+                            
+                            try:
+                                runtime = read_runtime(run_output)
+                            except IOError:
+                                note_result(results,
+                                            inst['benchmark'],
+                                            inst['implementation'],
+                                            inst['dataset'],
+                                            run,
+                                            "no runtime measurement")
+                                continue
+                            except ValueError:
+                                note_result(results,
+                                            inst['benchmark'],
+                                            inst['implementation'],
+                                            inst['dataset'],
+                                            run,
+                                            "non-integer runtime measurement")
+                                continue
+                            
+                            try:
+                                result = read_json_file(os.path.join(run_output, "result.json"))
+                                expected = inst['expected_output']
+                                match = compare_json(result, expected)
+                                f = open(validationpath, "w")
+                                f.write(str(int(match)) + "\n")
+                                f.close()
+                                if match:
+                                    note_result(results,
+                                                inst['benchmark'],
+                                                inst['implementation'],
+                                                inst['dataset'],
+                                                run,
+                                                runtime)
+                                else:
+                                    note_result(results,
+                                                inst['benchmark'],
+                                                inst['implementation'],
+                                                inst['dataset'],
+                                                run,
+                                                "result did not match expected result")
+                            except (IOError, ValueError):
+                                note_result(results,
+                                            inst['benchmark'],
+                                            inst['implementation'],
+                                            inst['dataset'],
+                                            run,
+                                            "cannot read result")
+                                # should validationpath file be written to in this case?
+                                f = open(validationpath, "w")
+                                f.write("cannot read result\n")
+                                f.close()
+                                #SHOULD ALSO RETURN failed_data_insts
     return (results, failed_insts, failed_data_insts) 
                         
                         
