@@ -578,7 +578,7 @@ def find_target_dir_and_what_to_run():
     elif len(sys.argv) == 6:
         return (sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4].split(','), sys.argv[5].split(','))
     else:
-        exit("Usage: %s <target_directory> [number_of_runs_per_case] [benchmark] [implementation1,implementation2,...] [dataset1,dataset2,...]" %
+        exit("Usage: %s [target_directory] [number_of_runs_per_case] [benchmark] [implementation1,implementation2,...] [dataset1,dataset2,...]" %
              sys.argv[0])
 
 if __name__ == '__main__':

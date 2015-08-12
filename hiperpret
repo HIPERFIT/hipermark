@@ -2,8 +2,34 @@
 
 import os
 import sys
+import math
 
 rundir_content = ["result.json","returncode.txt","runtime.txt","stderr.log","stdout.log","validation.txt"]
+
+
+def get_nth_moment (result_times, n):
+    """ 
+    Calculates the nth moment of a list.
+
+    Keyword values:
+    result_times -- list of result times (floats)
+    n -- integer describing that statistical moment of result_times which is returned
+    """
+    suml = 0
+    N = len(result_times)
+    for i in range(N):
+        suml += result_times[i]**n
+    return (suml/float(N))
+
+def get_average_and_stddev (result_times):
+    """ Returns average and stddev for a list.
+
+    Keyword values:
+    result_times -- list of result times (floats)
+    """
+    av = get_nth_moment(result_times, 1)
+    return (av, math.sqrt(get_nth_moment(result_times, 2) - av**2))
+
 
 class Run:
     def __init__(self, benchmark_name,
@@ -14,7 +40,7 @@ class Run:
         self.benchmark_name = benchmark_name
         self.implementation_name = implementation_name
         self.dataset_name = dataset_name
-        self.run = int(runnum)
+        self.runnum = runnum
         self.directory = directory
         dircontents = os.listdir(self.directory)
         N = len(rundir_content)
@@ -30,6 +56,13 @@ class Run:
                         self.validation = int(validation_file.read())
                     except ValueError:
                         raise Exception("The content of either the %s, %s, or %s was not an integer." % (rundir_content[1], rundir_content[2], rundir_content[5]))
+    def __str__(self):
+        a = "benchmark: {0}, implementation: {1},\
+dataset: {2}, run number: {3}".format(self.benchmark_name,
+                                      self.implementation_name,
+                                      self.dataset_name,
+                                      str(self.runnum))
+        return a
 
         
 
@@ -39,24 +72,35 @@ class Case:
         self.implementation_name = implementation_name
         self.dataset_name = dataset_name
         self.directory = directory
-        self.runs = []
+        self.runs = {}
         dircontents = os.listdir(self.directory)
         for run in dircontents:
             try:
-                runnum = str(run)
+                runnum = int(run)
                 rundir = os.path.join(self.directory, run)
                 if not os.path.isdir(rundir):
                     raise Exception("The folder %s may only contain folders. %s is not a folder." % (self.directory, rundir))
                 if runnum < 0:
                     raise Exception("Folder names in %s must be non-negative integers." % self.directory)
-                self.runs.append(Run(self.benchmark_name,
+                self.runs[runnum] = Run(self.benchmark_name,
                                      self.implementation_name,
                                      self.dataset_name,
                                      runnum,
-                                     rundir))
+                                     rundir)
             except ValueError:
                 raise Exception("The folder %s may only contain folders with integer names.")
+    def __str__(self):
+        a = "benchmark: {0}, implementation: {1}, dataset: {2}".format(self.benchmark_name,
+                                                                       self.implementation_name,
+                                                                       self.dataset_name)
+        return a
         
+    def get_runtime(self):
+        runtimes = []
+        for r in self.runs:
+            runtimes.append(self.runs[r].runtime)
+        av, stddev = get_average_and_stddev(runtimes)
+        return (av, stddev)        
 
 
 class Implementation:
@@ -64,51 +108,43 @@ class Implementation:
         self.benchmark_name = benchmark_name
         self.name = name
         self.directory = directory
-        self.datasets = [] # unnecessary? 
-        self.cases = []
+        self.cases = {}
         print("Name: %s, %s. Directory: %s" % (self.benchmark_name, self.name, self.directory))
-        #dircontents = os.listdir(self.directory)
         run_outputdir = os.path.join(self.directory, "run_output")
         if not os.path.isdir(run_outputdir):
             raise Exception("The implementation folders must contain a \"run_output\" folder. %s does not." % self.directory)
         dircontents = os.listdir(run_outputdir)
-        for ds in dircontents:
-            datasetdir = os.path.join(run_outputdir, ds)
+        for dsname in dircontents:
+            datasetdir = os.path.join(run_outputdir, dsname)
             if not os.path.isdir(datasetdir):
-                raise Exception("The content of %s must be folders with dataset names. But %s is not a folder." % (run_outputdir, ds))
-            self.datasets.append(ds)
-            self.cases.append(Case(benchmark_name,
-                                   self.name,
-                                   ds,
-                                   datasetdir))
-
-            
-        # The run_counters give names to the folders in a dataset folder.
-        # The run_counter folder contains: result.json, returncode.txt, runtime.txt,
-        # stderr.log, stdout.log, and validation.txt.
-        # New classes for both cases and runs could be made.
+                raise Exception("The content of %s must be folders with dataset names. But %s is not a folder." % (run_outputdir, dsname))
+            self.cases[dsname] = Case(self.benchmark_name,
+                                      self.name,
+                                      dsname,
+                                      datasetdir)
+    def __str__(self):
+        a = "benchmark: {0}, implementation: {1}.".format(self.benchmark_name, self.name)
+        return a
 
 class Benchmark:
     def __init__(self, name, directory):
-        # basic sanity check:
-          # Should the benchmark dir only contain folders?
-        # The folders contained in benchmark_dir is assumed to contain implementations.
         self.name = name
         self.directory = directory
-        self.implementations = []
+        self.implementations = {}
         dircontents = os.listdir(self.directory)
         for impl in dircontents:
             impldir = os.path.join(self.directory, impl)
             if not os.path.isdir(impldir):
                 raise Exception("The folder containing the %s benchmark must only contain directories. %s is not a directory." % (self.name, impldir))
             implname = os.path.basename(impldir)
-            self.implementations.append(Implementation(self.name,
-                                                       implname,
-                                                       impldir))
-    def interpret_benchmark():
-        return 0
+            self.implementations[implname] = Implementation(self.name,
+                                                             implname,
+                                                             impldir)
             
-# Shoudl dicts instead of lists be used.
+    def __str__(self):
+        a = "benchmark: {0}".format(self.name)
+        return a
+
     
 rootdir = os.getcwd()
 print("rootdir is: %s" % rootdir)
@@ -118,17 +154,19 @@ instdir = sys.argv[1]
 if not os.path.isdir(instdir):
     raise Exception("Directory %s could not be found." % sys.argv[1])
 dircontents = os.listdir(instdir)
-b = []
+b = {}
 for bm in dircontents:
     bmdir = os.path.join(rootdir, instdir, bm)
     if not os.path.isdir(bmdir):
         raise Exception("Only directories may be placed in %s. %s is not a directory." % (sys.argv[1], bm))
     name = os.path.basename(os.path.normpath(bm))
-    b.append(Benchmark(name, bmdir))
+    b[name] = Benchmark(name, bmdir)
 
-bm = b[0]
-imp = bm.implementations[0]
-case = imp.cases[0]
+
+# Various testing. BEGIN.
+bm = b['OptionPricing']
+imp = bm.implementations['cpp_openmp']
+case = imp.cases['medium']
 run = case.runs[0]
 run_time = run.runtime
 print(bm)
@@ -136,9 +174,16 @@ print(imp)
 print(case)
 print(run)
 print(run_time)
-print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, run number: %d is: %d" % (bm.name, imp.name, case.dataset_name, run.run, run.runtime))
-print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, run number: %d is: %d" % (run.benchmark_name, run.implementation_name, run.dataset_name, run.run, run.runtime))
-
+print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, run number: %d is: %d" % (bm.name, imp.name, case.dataset_name, run.runnum, run.runtime))
+print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, run number: %d is: %df" % (run.benchmark_name, run.implementation_name, run.dataset_name, run.runnum, run.runtime))
+av, stddev = case.get_runtime()
+print("average of %s")
+print(stddev)
+print(bm)
+print(imp)
+print(case)
+print(run)
+# Various testing. END.
 # a case can be interpreted meaning that the independant variable is run number. No uncertainty.
 # an implementation can be interpreted meaning that the independent variable is dataset name. The uncertainty is the observed uncertainty by iterating over the run numbers.
 # a benchmark can be interpreted such that the independent variable is both implementation and dataset name. A 3-D plot could prob. be made. Uncertainty as above. 
