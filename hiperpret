@@ -4,7 +4,14 @@ import os
 import sys
 import math
 
-rundir_content = ["result.json","returncode.txt","runtime.txt","stderr.log","stdout.log","validation.txt"]
+result_file = "result.json"
+returncode_file = "returncode.txt"
+runtime_file = "runtime.txt"
+stderr_file = "stderr.log"
+stdout_file = "stdout.log"
+validation_file = "validation.txt"
+
+rundir_content = [result_file, returncode_file, runtime_file, stderr_file, stdout_file, validation_file]
 
 
 def get_nth_moment (result_times, n):
