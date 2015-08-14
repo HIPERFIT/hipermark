@@ -146,6 +146,17 @@ class Implementation:
         (stdoutdata, stderrdata) = proc.communicate(input=None)
         return (proc.returncode, stdoutdata, stderrdata)
 
+    # For a given benchmark, we should check whether it has an executable function called
+    # validation_function. If this is the case, then this validation function should be
+    # used to check if the calculated result is correct. A variable in the benchmark object
+    # should be set to indicate that this benchmark uses an external validation function.
+    # When the checking of the result occurs, we should thus make an if which decides which
+    # of the two validation oppurtunities which should be used: internal or external.
+
+    # If the internal is used, nothing is changed from the current situation.
+    # If the external is used, then the validation_function file will be started as a new
+    # process and the result of the validation will be given as the return code which will
+    # then be stored to the validation.txt file, just like for internal validation.
 class Benchmark:
     def __init__(self, hipermarkdir, name, directory):
         """This initialization stores all the implementations and all the datasets of
@@ -163,28 +174,34 @@ class Benchmark:
         """
         self.hipermarkdir = hipermarkdir
         self.name = name
-
-        if os.path.isdir(directory):
-            self.directory = directory
-        else:
+        
+        if not os.path.isdir(directory):
             raise Exception("Benchmark directory %s does not exist" % directory)
+        self.directory = directory
         dircontents = os.listdir(self.directory) # list of content in benchmark root directory
-
-        # The lib directories do not have to exist.
-        # The library functions for a benchmark are located in benchmarks/<benchmark>/lib/include
         self.benchmark_lib_dir = os.path.join(self.directory, "lib")
         self.hipermark_lib_dir = os.path.join(self.hipermarkdir, "lib")
 
-        if "implementations" in dircontents:
-            self.__gather_implementations() #creates list of implementations to be run.
-        else:
+        if not ("implementations" in dircontents):
             raise Exception("No \"implementation\" directory in %s" % directory)
+        self.__gather_implementations() #creates list of implementations to be run.
 
-        if "datasets" in dircontents:
-            self.datasets = os.path.join(self.directory, "datasets")
-            self.__gather_datasets()
+        if not ("datasets" in dircontents):
+            raise Exception("No datasets directory in %s" % directory)        
+        self.datasets = os.path.join(self.directory, "datasets")
+        self.__gather_datasets()
+
+        # check if benchmark uses internal or external validation function
+        lib_dircontents = os.listdir(os.path.join(self.benchmark_lib_dir, "include"))
+        if "validation_function" in lib_dircontents:
+            self.external_validation = True
+            validation_function_path = os.path.join(self.benchmark_lib_dir,
+                                                    "include", "validation_function" )
+            self.external_validation_file = validation_function_path
+            if not executable(validation_function_path):
+                raise Exception("Validation function exists but is not executable. See %s." % validation_function_path)
         else:
-            raise Exception("No datasets directory in %s" % directory)
+            self.external_validation = False
 
 
     def __gather_implementations(self):
@@ -228,7 +245,7 @@ class Benchmark:
                     raise Exception("File %s missing or not a file." % outputfile)
 
                 self.datasets[dataset] = { 'input_file' : inputfile,
-                                           'expected_output' : read_json_file(outputfile)
+                                           'expected_output_file' : outputfile
                                          }
 
 def desc_quadruple(benchmark, implementation, dataset, run):
@@ -360,7 +377,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                                'implementation' : impl.name,
                                'dataset' : dataset,
                                'instantiation_directory' : inst_dir,
-                               'expected_output' : b.datasets[dataset]['expected_output']
+                               'expected_output_file' : b.datasets[dataset]['expected_output_file']
                            })
 
     # Running all "instantiate" files
@@ -382,7 +399,7 @@ def run_some_benchmark_implementations(hipermark_dir,
             insts.append({ 'benchmark' : b.name,
                         'implementation' : impl.name,
                         'instantiation_directory' : inst_dir,
-                        'expected_output' : b.datasets[dataset]['expected_output']})
+                        'expected_output_file' : b.datasets[dataset]['expected_output_file']})
 
     # Here, all data instantiations are looped over and the run file
     # is executed for each dataset. 
@@ -472,9 +489,35 @@ def run_some_benchmark_implementations(hipermark_dir,
                                     continue
                                 
                                 try:
-                                    result = read_json_file(os.path.join(run_output, "result.json"))
-                                    expected = inst['expected_output']
-                                    match = compare_json(result, expected)
+                                    resultfile = os.path.join(run_output, "result.json")
+                                    expectedfile = inst['expected_output_file']
+                                    if b.external_validation:
+                                        evstdoutpath = os.path.join(run_output, "ext_val_stdout.log")
+                                        evstderrpath = os.path.join(run_output, "ext_val_stderr.log")
+                                        with open(evstdoutpath, 'w') as evstdout:
+                                            with open(evstdoutpath, 'w') as evstderr:
+                                                print("Launching external evaluation with:") #DEV
+                                                print("resultfile: %s, expectedfile: %s" %
+                                                      (resultfile, expectedfile)) #DEV
+                                                print("launching: %s" %
+                                                      b.external_validation_file + " " + resultfile + " " + expectedfile) #DEV
+                                                # This should be wrapped in some filehandlers so stderr/stdin can be written to files.
+                                                proc = subprocess.Popen([b.external_validation_file, resultfile, expectedfile],
+                                                                        stdout=evstdout,
+                                                                        stderr=evstderr,
+                                                                        stdin=subprocess.PIPE,
+                                                                        close_fds=True,
+                                                                        cwd=inst_dir)
+                                                #return code 0 of above means succesfull val.
+                                                proc.stdin.close() # Make sure stdin EOFs.
+                                                proc.wait()
+                                                # estdout.write(stdin + "\n")
+                                                # estderr.write(stderr + "\n")
+                                                match = 1 ^ proc.returncode #how do you access the return code??
+                                    else:
+                                        result = read_json_file(resultfile)
+                                        expected = read_json_file(expectedfile)
+                                        match = compare_json(result, expected)
                                     f = open(validationpath, "w")
                                     f.write(str(int(match)) + "\n")
                                     f.close()
@@ -606,7 +649,8 @@ if __name__ == '__main__':
 
     print("Assuming I am being run from main hipermark directory.")
     
-    # somewhere it must be checked that these benchmarks and these implementations exist.
+    # somewhere it should be checked that these benchmarks and these implementations exist.
+    # Generally, the handling of benchmark/implementation sanity checks should be looked at.
     print("Will run benchmark %s." % benchmark)
 
     if implementations is None:
