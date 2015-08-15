@@ -27,7 +27,7 @@ def mkdir_p(path):
     try:
         os.makedirs(path)
     except OSError as exc: # Python >2.5
-        if exc.errno == errno.EEXIST and os.path.isdir(path): # this fails.
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
             pass
         else: raise
 
@@ -49,20 +49,16 @@ class Implementation:
         name -- Name of implementation's folder.
         directory -- /benchmarks/<benchmark>/implementations/<implementation>
         """
-        if os.path.isdir(directory): #returns true if path is an existing directory.
-            self.directory = directory # directory of implementation
-        else:
-            # If the path is not a directory, one of these two errors are raised.
+        if not os.path.isdir(directory): #returns true if path is an existing directory.
             if os.path.isfile(directory):
                 raise Exception("File %s exists, but implementation should be contained in its own directory." % directory)
             else:
                 raise Exception("Implementation directory %s does not exist " % directory)
-
+        self.directory = directory
         self.name = name
         self.hipermark_lib_dir = hipermark_lib_dir
         self.benchmark_lib_dir = benchmark_lib_dir
 
-        # Joins the directory path with "instantiate" to get the full path of the instantiate file. Sets the object var instantiatefile if this is an executable.
         instantiate_file = os.path.join(self.directory, "instantiate")
         instantiate_data_file = os.path.join(self.directory, "instantiate_data")
         if not executable(instantiate_file):
@@ -71,7 +67,6 @@ class Implementation:
             raise Exception("%s does not exist or it is not an executable file" % instantiate_data_file)
         self.instantiate_file = instantiate_file
         self.instantiate_data_file = instantiate_data_file
-
 
     def instantiate_data(self, inst_dir, input_data, dataset_name):
         """Run the instantiate_data script which prepares the input data of the case.
@@ -146,17 +141,6 @@ class Implementation:
         (stdoutdata, stderrdata) = proc.communicate(input=None)
         return (proc.returncode, stdoutdata, stderrdata)
 
-    # For a given benchmark, we should check whether it has an executable function called
-    # validation_function. If this is the case, then this validation function should be
-    # used to check if the calculated result is correct. A variable in the benchmark object
-    # should be set to indicate that this benchmark uses an external validation function.
-    # When the checking of the result occurs, we should thus make an if which decides which
-    # of the two validation oppurtunities which should be used: internal or external.
-
-    # If the internal is used, nothing is changed from the current situation.
-    # If the external is used, then the validation_function file will be started as a new
-    # process and the result of the validation will be given as the return code which will
-    # then be stored to the validation.txt file, just like for internal validation.
 class Benchmark:
     def __init__(self, hipermarkdir, name, directory):
         """This initialization stores all the implementations and all the datasets of
@@ -184,27 +168,30 @@ class Benchmark:
 
         if not ("implementations" in dircontents):
             raise Exception("No \"implementation\" directory in %s" % directory)
-        self.__gather_implementations() #creates list of implementations to be run.
+        self._gather_implementations() #creates list of implementations to be run.
 
         if not ("datasets" in dircontents):
             raise Exception("No datasets directory in %s" % directory)        
-        self.datasets = os.path.join(self.directory, "datasets")
-        self.__gather_datasets()
+        self._gather_datasets()
+        self._get_validation_function()
 
-        # check if benchmark uses internal or external validation function
-        lib_dircontents = os.listdir(os.path.join(self.benchmark_lib_dir, "include"))
-        if "validation_function" in lib_dircontents:
+    def _get_validation_function(self):
+        """ Checks if benchmark uses internal or an external validation function
+        and sets the object variables describing this.
+        """
+        dircontents = os.listdir(self.directory)
+        if "validation_function" in dircontents:
             self.external_validation = True
-            validation_function_path = os.path.join(self.benchmark_lib_dir,
-                                                    "include", "validation_function" )
+            validation_function_path = os.path.join(self.directory,
+                                                    "validation_function")
             self.external_validation_file = validation_function_path
             if not executable(validation_function_path):
-                raise Exception("Validation function exists but is not executable. See %s." % validation_function_path)
+                raise Exception("Validation function exists at %s but it is not executable." %
+                                validation_function_path)
         else:
             self.external_validation = False
 
-
-    def __gather_implementations(self):
+    def _gather_implementations(self):
         """ Creates an implementation object for each non-disabled folder in 
         /benchmarks/<benchmark>/implementations/. The objects are placed in
         a list self.implementations.
@@ -224,29 +211,30 @@ class Benchmark:
                                                            os.path.join(self.directory, "implementations", impl)))
             else:
                 raise Exception("%s may only contain folders, not files." %implrootpath )
-
             
-    def __gather_datasets(self):
+    def _gather_datasets(self):
         """Checks that each dataset in /benchmarks/<benchmark>/datasets/
         has the correct structure. Sets the self.datasets variable to an
         associative array of tuples containing the file name of the input
         file and a Python object representing the expected output.
         """
         self.datasets = {}
-        for dataset in os.listdir(os.path.join(self.directory, "datasets")):
-            datasetpath = os.path.join(self.directory, "datasets", dataset)
-            if os.path.isdir(datasetpath):
-                inputfile = os.path.join(self.directory, "datasets", dataset, "input.json")
-                outputfile = os.path.join(self.directory, "datasets", dataset, "output.json")
-                # Checks that input and output files are present.
-                if not os.path.isfile(inputfile):
-                    raise Exception("File %s missing or not a file." % inputfile)
-                if not os.path.isfile(outputfile):
-                    raise Exception("File %s missing or not a file." % outputfile)
-
-                self.datasets[dataset] = { 'input_file' : inputfile,
-                                           'expected_output_file' : outputfile
-                                         }
+        dataset_dir = os.path.join(self.directory, "datasets")
+        for dataset in os.listdir(dataset_dir):
+            datasetpath = os.path.join(dataset_dir, dataset)
+            if not os.path.isdir(datasetpath):
+                raise Exception("Only directories containing datasets may be present in %s. %s is not a directory." %
+                                (dataset_dir, datasetpath))
+            inputfile = os.path.join(self.directory, "datasets", dataset, "input.json")
+            outputfile = os.path.join(self.directory, "datasets", dataset, "output.json")
+            # Checks that input and output files are present.
+            if not os.path.isfile(inputfile):
+                raise Exception("File %s missing or not a file." % inputfile)
+            if not os.path.isfile(outputfile):
+                raise Exception("File %s missing or not a file." % outputfile)
+            self.datasets[dataset] = { 'input_file' : inputfile,
+                                       'expected_output_file' : outputfile
+            }
 
 def desc_quadruple(benchmark, implementation, dataset, run):
     return "Benchmark %s, implementation %s, dataset %s, run %d (of this execution)" % (benchmark, implementation, dataset, run)
@@ -296,6 +284,12 @@ def get_average_and_stddev (result_times):
     return (av, math.sqrt(get_nth_moment(result_times, 2) - av**2))
 
 def find_run_counter(target_dir):
+    """Finds the run number for the first run of this execution.
+    This is done to avoid overwriting output results.
+
+    Keyword values:
+    target_dir -- The dir where the count is performed.
+    """
     dirlist = os.listdir(target_dir)
     max_number = 0
     empty = True
@@ -347,7 +341,7 @@ def run_some_benchmark_implementations(hipermark_dir,
     failed_insts = [] # all failed implementation compilations
     results = {} # dict in Python. Like an associative array. key: (bench, impl, dataset)
     # value: list of runtimes. Manipulated through note_result function.
-
+    print("self.external_validation is set to %r" % b.external_validation) #DEV!
     # Things are overwritten here.
     # Running all "instantiate_data" files
     for impl in b.implementations:
@@ -403,9 +397,6 @@ def run_some_benchmark_implementations(hipermark_dir,
 
     # Here, all data instantiations are looped over and the run file
     # is executed for each dataset. 
-    # This execution should allow run to take an argument in the form of
-    # HIPERMARK_INPUT_NAME.
-    # Here, we could start by finding first_run_number by looking at what the folder contains.
     for inst in data_insts:
         inst_dir = inst['instantiation_directory']
         path_for_outputs = os.path.join(inst_dir, "run_output/", inst['dataset'])
@@ -496,12 +487,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                                         evstderrpath = os.path.join(run_output, "ext_val_stderr.log")
                                         with open(evstdoutpath, 'w') as evstdout:
                                             with open(evstdoutpath, 'w') as evstderr:
-                                                print("Launching external evaluation with:") #DEV
-                                                print("resultfile: %s, expectedfile: %s" %
-                                                      (resultfile, expectedfile)) #DEV
-                                                print("launching: %s" %
-                                                      b.external_validation_file + " " + resultfile + " " + expectedfile) #DEV
-                                                # This should be wrapped in some filehandlers so stderr/stdin can be written to files.
+                                                print("Launching external evalulation")
                                                 proc = subprocess.Popen([b.external_validation_file, resultfile, expectedfile],
                                                                         stdout=evstdout,
                                                                         stderr=evstderr,
@@ -511,9 +497,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                                                 #return code 0 of above means succesfull val.
                                                 proc.stdin.close() # Make sure stdin EOFs.
                                                 proc.wait()
-                                                # estdout.write(stdin + "\n")
-                                                # estderr.write(stderr + "\n")
-                                                match = 1 ^ proc.returncode #how do you access the return code??
+                                                match = 1 ^ proc.returncode
                                     else:
                                         result = read_json_file(resultfile)
                                         expected = read_json_file(expectedfile)
@@ -542,7 +526,6 @@ def run_some_benchmark_implementations(hipermark_dir,
                                                 inst['dataset'],
                                                 run,
                                                 "cannot read result")
-                                    # should validationpath file be written to in this case?
                                     f = open(validationpath, "w")
                                     f.write("cannot read result\n")
                                     f.close()
