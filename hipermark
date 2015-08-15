@@ -17,6 +17,8 @@ RESULT_FILENAME = "result.json"
 RUNTIME_FILENAME = "runtime.txt"
 TIMESTAMPSTART_FILENAME = "tsstartrun.txt"
 TIMESTAMPEND_FILENAME = "tsendrun.txt"
+INSTANTIATE_FILENAME = "instantiate"
+INSTANTIATE_DATA_FILENAME = "instantiate_data"
 
 def executable(fpath):
     """Returns true if the file exists and can be executed. """
@@ -68,8 +70,8 @@ class Implementation:
         self.hipermark_lib_dir = hipermark_lib_dir
         self.benchmark_lib_dir = benchmark_lib_dir
 
-        instantiate_file = os.path.join(self.directory, "instantiate")
-        instantiate_data_file = os.path.join(self.directory, "instantiate_data")
+        instantiate_file = os.path.join(self.directory, INSTANTIATE_FILENAME)
+        instantiate_data_file = os.path.join(self.directory, INSTANTIATE_DATA_FILENAME)
         if not executable(instantiate_file):
             raise Exception("%s does not exist or it is not an executable file" % instantiate_file)
         if not executable(instantiate_data_file):
@@ -350,7 +352,6 @@ def run_some_benchmark_implementations(hipermark_dir,
     failed_insts = [] # all failed implementation compilations
     results = {} # dict in Python. Like an associative array. key: (bench, impl, dataset)
     # value: list of runtimes. Manipulated through note_result function.
-    print("self.external_validation is set to %r" % b.external_validation) #DEV!
     # Things are overwritten here.
     # Running all "instantiate_data" files
     for impl in b.implementations:
