@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3.4
 
 import os
 import subprocess
@@ -8,6 +8,15 @@ import errno # needed to prevent error in exc.errno == errno.EEXIST
 import math
 import time
 # The 'six' library could be imported since it is compatible with both P2 and P3.
+
+STDOUT_FILENAME = "stdout.log"
+STDERR_FILENAME = "stderr.log"
+RETURNCODE_FILENAME = "returncode.txt"
+VALIDATION_FILENAME = "validation.txt"
+RESULT_FILENAME = "result.json"
+RUNTIME_FILENAME = "runtime.txt"
+TIMESTAMPSTART_FILENAME = "tsstartrun.txt"
+TIMESTAMPEND_FILENAME = "tsendrun.txt"
 
 def executable(fpath):
     """Returns true if the file exists and can be executed. """
@@ -72,7 +81,7 @@ class Implementation:
         """Run the instantiate_data script which prepares the input data of the case.
 
         keyword arguments:
-        inst_dir -- /instantiations/"<benchmark>-<implementation>" (target directory)
+        inst_dir -- /instantiations/"<benchmark>/<implementation>" (target directory)
         input_data -- path of input file. /benchmarks/<benchmark>/datasets/<dataset>
         dataset_name -- name of dataset, specified by dir name of dataset in source files.
         """
@@ -110,7 +119,7 @@ class Implementation:
         The compilation of the implementation source code takes place here.
 
         keyword arguments:
-        inst_dir -- /instantiations/"<benchmark>-<implementation>" (target directory)
+        inst_dir -- /instantiations/"<benchmark>/<implementation>" (target directory)
         platform_file -- /config/platform_example.json
         """
         if not os.path.isdir(inst_dir):
@@ -128,7 +137,7 @@ class Implementation:
         instantiate_env["HIPERMARK_PLATFORM"] = platform_file
 
         # cwd = inst_dir sets the child process' folder to:
-        # /instantiations/"<benchmark>-<implementation>/"
+        # /instantiations/"<benchmark>/<implementation>/"
         proc = subprocess.Popen(self.instantiate_file,
                                 env=instantiate_env,
                                 stdout=subprocess.PIPE,
@@ -406,14 +415,14 @@ def run_some_benchmark_implementations(hipermark_dir,
             run_output = os.path.join(inst_dir, "run_output/", inst['dataset'], str(run))
             mkdir_p(run_output)
             print("\nRunning %s" % run_output)
-            stdoutpath = os.path.join(run_output, "stdout.log")
-            stderrpath = os.path.join(run_output, "stderr.log")
-            returncodepath = os.path.join(run_output, "returncode.txt")
-            validationpath = os.path.join(run_output, "validation.txt")
-            resultpath = os.path.join(run_output, "result.json")
-            runtimepath = os.path.join(run_output, "runtime.txt")
-            timestampstartpath = os.path.join(run_output, "tsstartrun.txt")
-            timestampendpath = os.path.join(run_output, "tsendrun.txt")
+            stdoutpath = os.path.join(run_output, STDOUT_FILENAME)
+            stderrpath = os.path.join(run_output, STDERR_FILENAME)
+            returncodepath = os.path.join(run_output, RETURNCODE_FILENAME)
+            validationpath = os.path.join(run_output, VALIDATION_FILENAME)
+            resultpath = os.path.join(run_output, RESULT_FILENAME)
+            runtimepath = os.path.join(run_output, RUNTIME_FILENAME)
+            timestampstartpath = os.path.join(run_output, TIMESTAMPSTART_FILENAME)
+            timestampendpath = os.path.join(run_output, TIMESTAMPEND_FILENAME)
             with open(stdoutpath, "w") as stdout:
                 with open(stderrpath, "w") as stderr:
                     with open(returncodepath, "w") as returncode_file:
