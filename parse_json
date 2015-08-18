@@ -15,6 +15,8 @@
 import json
 import itertools
 
+json_file = "test.json"
+
 def read_json_file(filename):
     """ returns an array containing the content of the JSON file.
 
@@ -24,8 +26,25 @@ def read_json_file(filename):
     with open(filename, "r") as file:
         return json.loads(file.read())
 
-
-def list_multiply(l):
+def _valid_dict(dict):
+    """Checks if a JSON represented by a dict complies with the required JSON
+    format, i.e., max depth of one.
+    """
+    keys = list(dict.keys())
+    for k in keys:
+        if not ((type(dict[k]) is unicode) |
+                (type(dict[k]) is list) |
+                (type(dict[k]) is int)):
+            return False
+        if type(dict[k]) is list:
+            for v in dict[k]:
+                if not ((type(v) is unicode) | (type(v) is int)):
+                    return False
+    return True
+                
+def _list_multiply(l):
+    """ Returns the cartesian product of the lists contained in l.
+    """
     ll = []
     for e in l:
         if (type(e) is int) | (type(e) is str):
@@ -36,9 +55,71 @@ def list_multiply(l):
         ret.append(list(e))
     return ret
 
-a = [[1,2,3,4,5,6,7],[8,9]]
-b = list_multiply(a)
-c = [["float", "double", "quadruple"], [0,1]]
-print(b)
-d = list_multiply(c)
-print(d)
+def _make_list_from_dict(dict):
+    """ Converts the values of a dict into a list of lists.
+    """
+    if not _valid_dict(dict):
+        raise Exception("Invalid types in JSON file.")
+    keys = list(dict.keys())
+    ret = []
+    for k in keys:
+        val = dict[k]
+        ret.append(val)
+    return ret
+
+def _make_list_of_dicts(ls, keys):
+    """ Returns a list of dicts with keys as given by 2nd arg. and vals as
+    entries in the list of lists, ls.
+    """
+    n_keys = len(keys)
+    for l in ls:
+        if len(l) != n_keys:
+            raise Exception("All lists in the list of lists do not have \
+            the same length as the keys argument.")
+    ret = []
+    for l in ls:
+        d = {}
+        i = 0
+        for k in keys:
+            d[k] = l[i]
+            i += 1
+        ret.append(d)
+    return ret
+
+def write_json(dict, target_path):
+    """Given a dictionary, this function will write a json file containing the 
+    data in the dict to the target path.
+    """
+    with open(target_path, "w") as fp:
+        ret = json.dump(dict, fp)
+        if ret != None:
+            raise Exception("Failed to write JSON file %s to path" % target_path)
+
+def write_multiple_json(l_dict, l_tp):
+    n = len(l_dict)
+    if n != len(l_tp):
+        raise Exception("The arguments for write_multiple_json do not have the\
+        same length.")
+    for i in range(n):
+        write_json(l_dict[i], l_tp[i])
+
+if __name__ == "__main__":
+    dict = read_json_file(json_file)
+    _valid_dict(dict)
+    keys = list(dict.keys())
+    l = _make_list_from_dict(dict)
+    l = _list_multiply(l)
+    ld = _make_list_of_dicts(l, keys)
+    path_names = []
+    for i in range(len(ld)):
+        path_names.append(str(i) + "-testing.json")
+    write_multiple_json(ld, path_names)
+    # Can the program read these JSONs that have been written to HD? (yes)
+    dict = read_json_file(path_names[0])
+    print(dict)
+    print(ld[0])
+    print("Truth value -- should be True: %r" % (dict == ld[0]))
+    print("Truth value -- should be False: %r" % (dict == ld[1]))
+    dict = read_json_file(path_names[8])
+    print("Truth value -- should be True: %r" % (dict == ld[8]))
+    print("Truth value -- should be False: %r" % (dict == ld[9]))
