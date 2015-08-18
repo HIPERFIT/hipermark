@@ -16,6 +16,7 @@ import json
 import itertools
 
 json_file = "test.json"
+json_file2 = "test2.json"
 
 def read_json_file(filename):
     """ returns an array containing the content of the JSON file.
@@ -104,8 +105,18 @@ def write_multiple_json(l_dict, l_tp):
         write_json(l_dict[i], l_tp[i])
 
 if __name__ == "__main__":
+    """ This file takes one JSON and writes JSON file(s) back to the HD.
+    The values in the input JSON file can be scalars or lists, not new JSON
+    (like dicts). This means that the JSON file's depth must max be one.
+    
+    The program writes to the HD all the JSON files which live in the cartesian
+    product of the values of input JSON file. If the input JSON contains four
+    lists with length n1, n2, n3, and n4, the program will thus create 
+    n1*n2*n3*n4 unique new files.
+
+    USE WITH CARE!!
+    """
     dict = read_json_file(json_file)
-    _valid_dict(dict)
     keys = list(dict.keys())
     l = _make_list_from_dict(dict)
     l = _list_multiply(l)
@@ -123,3 +134,8 @@ if __name__ == "__main__":
     dict = read_json_file(path_names[8])
     print("Truth value -- should be True: %r" % (dict == ld[8]))
     print("Truth value -- should be False: %r" % (dict == ld[9]))
+    try:
+        dict = read_json_file(json_file2)
+        make_list_from_dict(dict)
+    except Exception:
+        print("Exception caugth succesfully!")
