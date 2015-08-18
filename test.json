@@ -1,0 +1,4 @@
+{
+    "REAL_TYPE": ["float","double","quadruple"],
+    "OPTIMIZATIONS": [0, 1]
+}

@@ -1,0 +1,88 @@
+#!/usr/bin/env python
+
+# check types. We could also allow for bools. Note:
+# JSON                  Python
+# ===================
+# object                  dict
+# array                   list
+# string                  unicode
+# number (int)    int, long
+# number (real)   float
+# true                    True
+# false                   False
+# null                    None
+
+import json
+
+def read_json_file(filename):
+    """ returns an array containing the content of the JSON file.
+
+    keyword arguments:
+    filename -- name of json file to interpret
+    """
+    with open(filename, "r") as file:
+        return json.loads(file.read())
+
+# def _expand_json_rec(dict, counter):
+#     keys = list(dict.keys())
+#     field = dict[len(keys) - counter]
+#     if type(field) is list:
+#         for v in field:
+#             return 
+        
+#     else:
+            
+#     return 0
+    
+
+# def expand_json(dict):
+#     keys = list(dict.keys())
+#     _expand_json_rec(dict, len(keys))
+#     print(len(keys))
+#     print(keys)
+
+
+
+stat_params = read_json_file("test.json")
+print(stat_params['REAL_TYPE'])
+keys = list(stat_params.keys())
+for k in keys:
+    if not ((type(stat_params[k]) is unicode) |
+            (type(stat_params[k]) is list) |
+            (type(stat_params[k]) is int)):
+        raise Exception("bla bla")
+    if type(stat_params[k]) is list:
+        for v in stat_params[k]:
+            if not ((type(v) is unicode) | (type(v) is int)):
+                print(type(v))
+                raise Exception("bla bla bla %s" % v)
+
+print(type(stat_params[k]))
+#expand_json(stat_params)
+
+a = [[1, 2], 3]
+res = []
+for v in a[0]:
+    c = [v] + [a[1]]
+    res.append(c)
+print(res)
+
+def f(l):
+    if l == []:
+        return []
+    v = l[0]
+    if type(v) is int:
+        return [v] + f(l[1:]) # incorrect
+    if type(v) is list:
+        return [v[0]] + f(l[1:]) + [v[1]] + f(l[1:])
+a = [1,[3,4],5]
+b = f(a)
+print(b)
+
+# Generate all possible combinations as dicts.
+# number of dicts becomes n1*n2*n3 where ni are the number of elements in a list.
+# generate all possible dicts.
+# def gen_dicts(dict):
+#     for k in keys:
+#         if type(k) is list:
+#             for e in k:            
