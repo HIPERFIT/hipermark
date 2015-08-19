@@ -199,7 +199,7 @@ class Implementation:
         instantiate_env["HIPERMARK_PLATFORM"] = platform_file
         for sc in static_conf:
             # should this one include the "HIPERMARK_" prefix?? Unknown if str() is nec. below.
-            instantiate_env["HIPERMARK_" + str(sc)] = static_conf[sc]
+            instantiate_env["HIPERMARK_CONFIG_" + str(sc)] = static_conf[sc]
 
         # cwd = inst_dir sets the child process' folder to:
         # /instantiations/"<benchmark>/<implementation>/"
