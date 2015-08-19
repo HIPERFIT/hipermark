@@ -9,6 +9,7 @@ import math
 import time
 # The 'six' library could be imported since it is compatible with both P2 and P3.
 
+STAT_CONFIG_FILENAME = "statconfig.json"
 STDOUT_FILENAME = "stdout.log"
 STDERR_FILENAME = "stderr.log"
 RETURNCODE_FILENAME = "returncode.txt"
@@ -19,6 +20,8 @@ TIMESTAMPSTART_FILENAME = "tsstartrun.txt"
 TIMESTAMPEND_FILENAME = "tsendrun.txt"
 INSTANTIATE_FILENAME = "instantiate"
 INSTANTIATE_DATA_FILENAME = "instantiate_data"
+EXT_VALIDATION_STDOUT_FILENAME = "ext_val_stdout.log"
+EXT_VALIDATION_STDERR_FILENAME = "ext_val_stderr.log"
 
 def executable(fpath):
     """Returns true if the file exists and can be executed. """
@@ -41,6 +44,9 @@ def mkdir_p(path):
         if exc.errno == errno.EEXIST and os.path.isdir(path):
             pass
         else: raise
+
+#class Statconfig:
+
 
 
 class Implementation:
@@ -75,10 +81,62 @@ class Implementation:
         if not executable(instantiate_file):
             raise Exception("%s does not exist or it is not an executable file" % instantiate_file)
         if not executable(instantiate_data_file):
-            raise Exception("%s does not exist or it is not an executable file" % instantiate_data_file)
+            raise Exception("%s does not exist or it is not an executable file" %
+                            instantiate_data_file)
         self.instantiate_file = instantiate_file
         self.instantiate_data_file = instantiate_data_file
+        _gather_statconfigs()
 
+    def _fail_on_keywords(keyword):
+        raise Exception("Unknown value keyword '%s' in template." %
+                        keyword)
+
+    def _all_possible_configurations(keyword_handler, template):
+        """ Takes a dict (representing a JSON) where the values are lists.
+        Finds the cartesian product of the lists and returns all points in
+        the space of the cartesian product as a list of dicts where the values
+        are scalars (non lists).
+
+        keyword arguments:
+        keyword_handler -- A function parsing keywords (vals that are strings, not lists)
+        template -- A dict with lists as values
+        """
+        all_configs = [{}]
+        for var in template:
+            options = template[var]
+            if type(options) is not list:
+                options = keyword_handler(options)
+            new_configs = []
+            for config in all_configs:
+                for option in options:
+                    if type(option) in [dict, list]:
+                        raise Exception("Invalid value for variable %s in configuration \
+                        template: %s" % (var, options))
+                    new_config = config.copy()
+                    new_config[var] = str(option)
+                    new_configs.append(new_config)
+            all_configs = new_configs
+        return all_configs
+
+    def _gather_statconfigs():
+        stat_config_file = os.path.join(self.directory, STAT_CONFIG_FILENAME)
+        if not os.path.isfile(stat_config_file):
+            self.statconfig_exists = False
+            self.statconfiglist = ["default", {}]
+            return
+        self.statconfig_exists = True
+        input_dict = read_json_file(stat_config_file)
+        # what if this is not a JSON?
+        statconfiglist = _all_possible_configurations(keyword_handler, input_dict)
+        # generate list of hash names.
+        # A map could be used here.
+        # store this as a tuple.
+        statconfig_names = []
+        for x in self.statconfiglist:
+            hash_val = hashlib.sha256(str(d)).hexdigest()[0:12]
+            statconfig_names.append(hash_val)
+        self.statconfiglist = zip(statconfig_names, statconfiglist)
+        
     def instantiate_data(self, inst_dir, input_data, dataset_name):
         """Run the instantiate_data script which prepares the input data of the case.
 
@@ -113,7 +171,7 @@ class Implementation:
         return (proc.returncode, stdoutdata, stderrdata)
 
  
-    def instantiate(self, inst_dir, platform_file):
+    def instantiate(self, inst_dir, static_conf, platform_file):
         """Runs the instantiate_file which creates a run file to run the
         implementation and also runs the local Makefile.
         The instantiate file copies all the necessary source files in its own
@@ -132,11 +190,15 @@ class Implementation:
         # HIPERMARK_BENCHMARK_LIB_DIR: /benchmarks/<benchmark>/lib
         # HIPERMARK_IMPLEMENTATION: /benchmarks/<benchmark>/implementations/<implementation>
         # HIPERMARK_PLATFORM: path of platform file. /config/platform_example.json
+        # env. vars should be set in seperate function.
         instantiate_env = os.environ.copy()
         instantiate_env["HIPERMARK_LIB_DIR"] = self.hipermark_lib_dir
         instantiate_env["HIPERMARK_BENCHMARK_LIB_DIR"] = self.benchmark_lib_dir
         instantiate_env["HIPERMARK_IMPLEMENTATION"] = self.directory
         instantiate_env["HIPERMARK_PLATFORM"] = platform_file
+        for sc in static_conf:
+            # should this one include the "HIPERMARK_" prefix?? Unknown if str() is nec. below.
+            instantiate_env["HIPERMARK_" + str(sc)] = static_conf[sc]
 
         # cwd = inst_dir sets the child process' folder to:
         # /instantiations/"<benchmark>/<implementation>/"
@@ -254,7 +316,7 @@ def desc_triple(benchmark, implementation, dataset):
     return "Benchmark %s, implementation %s, dataset %s" % (benchmark, implementation, dataset)
 
 # This is a local variable that is only used in evaluation of this execution. For serious data analysis, the folder structure is used.
-def note_result(results, benchmark, implementation, dataset, run, runtime):
+def note_result(results, benchmark, implementation, stat_name, stat_dict, dataset, run, runtime):
     """Stores the runtime of the execution of an implementation in a dictionary.
     This dictionary has triple's (benchmark, implementation, dataset) as key.
     The values are stored in a list which indexes over the run counter.
@@ -318,7 +380,7 @@ def find_run_counter(target_dir):
                         target_dir)
     if not empty:
         max_number = max(a) + 1
-    return max_number
+    return max_number        
     
 def run_some_benchmark_implementations(hipermark_dir,
                                        workdir,
@@ -359,54 +421,75 @@ def run_some_benchmark_implementations(hipermark_dir,
             continue
         # the os.getcwd ensures that inst_dir is absolute path.
         # If user has specified absolute path, then the os.getcwd() is ignored.
-        inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s" % (b.name, impl.name))
-        for dataset in b.datasets:
-            if not use_dataset_fn(dataset):
-                continue
-            print("Instantiating dataset \"%s\" in %s" % (dataset, inst_dir))
-            (retcode, stdout, stderr) = impl.instantiate_data(inst_dir,
-                                                              b.datasets[dataset]['input_file'],
-                                                              dataset) #compilation of dataset.
+        # for all statconfigs
+         #what if this is empty??? Then this will not run even once!
+         # a goto might be used?
+         # sconf is a list of tuples(sconf_name, sconf_dict)
+        for sconf in impl.statconfiglist:
+            inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s/%s" %
+                                    (b.name, impl.name, sconf[0]))
+            for dataset in b.datasets:
+                if not use_dataset_fn(dataset):
+                    continue
+                print("Instantiating dataset \"%s\" in %s" % (dataset, inst_dir))
+                # SHOULD impl.instantiate_data have access to the env. vars of impl.statconfiglist??
+                (retcode, stdout, stderr) = impl.instantiate_data(
+                    inst_dir, b.datasets[dataset]['input_file'], dataset)
             if retcode != 0:
                 failed_data_insts.append({ 'benchmark' : b.name,
-                                      'implementation' : impl.name,
-                                      'dataset' : dataset,
-                                      'instantiation_directory' : inst_dir,
-                                      'retcode' : retcode,
-                                      'stdout' : stdout,
-                                      'stderr' : stderr})
+                                           'implementation' : impl.name,
+                                           'stat_config_name': sconf[0],
+                                           'stat_config_dict': sconf[1],
+                                           'dataset' : dataset,
+                                           'instantiation_directory' : inst_dir,
+                                           'retcode' : retcode,
+                                           'stdout' : stdout,
+                                           'stderr' : stderr})
                 print("Spoiler: failed")
             else:
                 data_insts.append({ 'benchmark' : b.name,
-                               'implementation' : impl.name,
-                               'dataset' : dataset,
-                               'instantiation_directory' : inst_dir,
-                               'expected_output_file' : b.datasets[dataset]['expected_output_file']
-                           })
+                                    'implementation' : impl.name,
+                                    'stat_config_name': sconf[0],
+                                    'stat_config_dict': sconf[1],
+                                    'dataset' : dataset,
+                                    'instantiation_directory' : inst_dir,
+                                    'expected_output_file' : b.datasets[dataset]['expected_output_file']})
+
+    # def set_env_vars(dict):
+    #     bla
+    #     bla
+    #     return 0
 
     # Running all "instantiate" files
     for impl in b.implementations:
         if not run_implementation_fn(impl):
             continue
-        inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s" % (b.name, impl.name))
-        print("Instantiating source code in %s" % inst_dir)
-        (retcode, stdout, stderr) = impl.instantiate(inst_dir, platform)#compile source code
-        if retcode != 0:
-            failed_insts.append({ 'benchmark' : b.name,
+        for sconf in impl.statconfiglist:
+            inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s/%s" %
+                                    (b.name, impl.name, sconf[0]))
+            print("Instantiating source code in %s" % inst_dir)
+            # set env vars.
+            (retcode, stdout, stderr) = impl.instantiate(inst_dir, sconf[1], platform)#compile source code
+            if retcode != 0:
+                failed_insts.append({ 'benchmark' : b.name,
                                       'implementation' : impl.name,
+                                      'stat_config_name': sconf[0],
+                                      'stat_config_dict': sconf[1],
                                       'instantiation_directory' : inst_dir,
                                       'retcode' : retcode,
                                       'stdout' : stdout,
                                       'stderr' : stderr})
-            print("Ran instantiate. Spoiler: failed")
-        else:
-            insts.append({ 'benchmark' : b.name,
-                        'implementation' : impl.name,
-                        'instantiation_directory' : inst_dir,
-                        'expected_output_file' : b.datasets[dataset]['expected_output_file']})
+                print("Ran instantiate. Spoiler: failed")
+            else:
+                insts.append({ 'benchmark' : b.name,
+                               'implementation' : impl.name,
+                               'stat_config_name': sconf[0],
+                               'stat_config_dict': sconf[1],
+                               'instantiation_directory' : inst_dir,
+                               'expected_output_file' : b.datasets[dataset]['expected_output_file']})
 
     # Here, all data instantiations are looped over and the run file
-    # is executed for each dataset. 
+    # is executed for each dataset*statconfig.
     for inst in data_insts:
         inst_dir = inst['instantiation_directory']
         path_for_outputs = os.path.join(inst_dir, "run_output/", inst['dataset'])
@@ -454,6 +537,8 @@ def run_some_benchmark_implementations(hipermark_dir,
                                     note_result(results,
                                                 inst['benchmark'],
                                                 inst['implementation'],
+                                                inst['stat_config_name'],
+                                                inst['stat_config_dict'],
                                                 inst['dataset'],
                                                 run,
                                                 "could not run")
@@ -464,6 +549,8 @@ def run_some_benchmark_implementations(hipermark_dir,
                                     note_result(results,
                                                 inst['benchmark'],
                                                 inst['implementation'],
+                                                inst['stat_config_name'],
+                                                inst['stat_config_dict'],
                                                 inst['dataset'],
                                                 run,
                                                 "non-zero exit code")
@@ -476,6 +563,8 @@ def run_some_benchmark_implementations(hipermark_dir,
                                     note_result(results,
                                             inst['benchmark'],
                                                 inst['implementation'],
+                                                inst['stat_config_name'],
+                                                inst['stat_config_dict'],
                                                 inst['dataset'],
                                                 run,
                                                 "no runtime measurement")
@@ -484,20 +573,22 @@ def run_some_benchmark_implementations(hipermark_dir,
                                     note_result(results,
                                                 inst['benchmark'],
                                                 inst['implementation'],
+                                                inst['stat_config_name'],
+                                                inst['stat_config_dict'],
                                                 inst['dataset'],
                                                 run,
                                                 "non-integer runtime measurement")
                                     continue
                                 
                                 try:
-                                    resultfile = os.path.join(run_output, "result.json")
+                                    resultfile = os.path.join(run_output, RESULT_FILENAME)
                                     expectedfile = inst['expected_output_file']
                                     if b.external_validation:
-                                        evstdoutpath = os.path.join(run_output, "ext_val_stdout.log")
-                                        evstderrpath = os.path.join(run_output, "ext_val_stderr.log")
+                                        evstdoutpath = os.path.join(run_output, EXT_VALIDATION_STDOUT_FILENAME)
+                                        evstderrpath = os.path.join(run_output, EXT_VALIDATION_STDERR_FILENAME)
                                         with open(evstdoutpath, 'w') as evstdout:
                                             with open(evstdoutpath, 'w') as evstderr:
-                                                print("Launching external evalulation")
+                                                print("Launching external validation")
                                                 proc = subprocess.Popen([b.external_validation_file, resultfile, expectedfile],
                                                                         stdout=evstdout,
                                                                         stderr=evstderr,
@@ -519,6 +610,8 @@ def run_some_benchmark_implementations(hipermark_dir,
                                         note_result(results,
                                                     inst['benchmark'],
                                                     inst['implementation'],
+                                                    inst['stat_config_name'],
+                                                    inst['stat_config_dict'],
                                                     inst['dataset'],
                                                     run,
                                                     runtime)
@@ -526,6 +619,8 @@ def run_some_benchmark_implementations(hipermark_dir,
                                         note_result(results,
                                                     inst['benchmark'],
                                                     inst['implementation'],
+                                                    inst['stat_config_name'],
+                                                    inst['stat_config_dict'],
                                                     inst['dataset'],
                                                     run,
                                                     "result did not match expected result")
@@ -533,6 +628,8 @@ def run_some_benchmark_implementations(hipermark_dir,
                                     note_result(results,
                                                 inst['benchmark'],
                                                 inst['implementation'],
+                                                inst['stat_config_name'],
+                                                inst['stat_config_dict'],
                                                 inst['dataset'],
                                                 run,
                                                 "cannot read result")
@@ -686,8 +783,8 @@ if __name__ == '__main__':
     )
 
     for failed in failed_to_instantiate_data:
-        print("Failed to instantiate this dataset: benchmark %s, implementation %s, dataset %s. Exit code was %d." %
-              (failed['benchmark'], failed['implementation'], failed['dataset'], failed['retcode']))
+        print("Failed to instantiate this dataset: benchmark %s, implementation %s, static config dict %s, static config name %s, dataset %s. Exit code was %d." %
+              (failed['benchmark'], failed['implementation'], failed['stat_config_dict'], failed['stat_config_name'], failed['dataset'], failed['retcode']))
         print("Stdout\n")
         print(failed['stdout'])
         print("Stderr\n")
@@ -695,14 +792,15 @@ if __name__ == '__main__':
         print("")
 
     for failed in failed_to_instantiate:
-        print("Failed to instantiate benchmark %s, implementation %s. Exit code was %d." %
-              (failed['benchmark'], failed['implementation'], failed['retcode']))
+        print("Failed to instantiate benchmark %s, implementation %s, static config dict %s, static config name %s. Exit code was %d." %
+              (failed['benchmark'], failed['implementation'], failed['stat_config_dict'], failed['stat_config_name'], failed['retcode']))
         print("Stdout\n")
         print(failed['stdout'])
         print("Stderr\n")
         print(failed['stderr'])
         print("")
 
+    # CODE BELOW THIS MIGHT NEED TO BE MODIFIED TO HANDLE STATIC CONF!
     # These should due to consistency be treated as immutables!
     successful_quadruple = {}
     successful_triple = {}
