@@ -7,6 +7,7 @@ import sys
 import errno # needed to prevent error in exc.errno == errno.EEXIST
 import math
 import time
+import hashlib
 # The 'six' library could be imported since it is compatible with both P2 and P3.
 
 STAT_CONFIG_FILENAME = "statconfig.json"
@@ -85,13 +86,13 @@ class Implementation:
                             instantiate_data_file)
         self.instantiate_file = instantiate_file
         self.instantiate_data_file = instantiate_data_file
-        _gather_statconfigs()
+        self._gather_statconfigs()
 
     def _fail_on_keywords(keyword):
         raise Exception("Unknown value keyword '%s' in template." %
                         keyword)
 
-    def _all_possible_configurations(keyword_handler, template):
+    def _all_possible_configurations(self, keyword_handler, template):
         """ Takes a dict (representing a JSON) where the values are lists.
         Finds the cartesian product of the lists and returns all points in
         the space of the cartesian product as a list of dicts where the values
@@ -118,21 +119,20 @@ class Implementation:
             all_configs = new_configs
         return all_configs
 
-    def _gather_statconfigs():
+    def _gather_statconfigs(self):
         stat_config_file = os.path.join(self.directory, STAT_CONFIG_FILENAME)
         if not os.path.isfile(stat_config_file):
             self.statconfig_exists = False
-            self.statconfiglist = ["default", {}]
+            self.statconfiglist = [("default", {})]
             return
         self.statconfig_exists = True
         input_dict = read_json_file(stat_config_file)
         # what if this is not a JSON?
-        statconfiglist = _all_possible_configurations(keyword_handler, input_dict)
+        statconfiglist = self._all_possible_configurations(self._fail_on_keywords, input_dict)
         # generate list of hash names.
         # A map could be used here.
-        # store this as a tuple.
         statconfig_names = []
-        for x in self.statconfiglist:
+        for d in statconfiglist:
             hash_val = hashlib.sha256(str(d)).hexdigest()[0:12]
             statconfig_names.append(hash_val)
         self.statconfiglist = zip(statconfig_names, statconfiglist)
@@ -212,6 +212,9 @@ class Implementation:
 
         # Read data from stdout and stderr, until end-of-file is reached. Also waits for process to terminate.
         (stdoutdata, stderrdata) = proc.communicate(input=None)
+        # should this one write the static_conf file to the inst_dir??
+        with open(os.path.join(inst_dir, STAT_CONFIG_FILENAME), "w") as fp:
+            fp.write(str(static_conf) + "\n")
         return (proc.returncode, stdoutdata, stderrdata)
 
 class Benchmark:
@@ -309,11 +312,17 @@ class Benchmark:
                                        'expected_output_file' : outputfile
             }
 
-def desc_quadruple(benchmark, implementation, dataset, run):
-    return "Benchmark %s, implementation %s, dataset %s, run %d (of this execution)" % (benchmark, implementation, dataset, run)
+def desc_sextuple(benchmark, implementation, stat_config_name, stat_config_dict, dataset, run):
+    if stat_config_dict == {}:
+        stat_config_dict = "None"
+    return ("Benchmark %s, implementation %s, static configuration name %s, static configuration description: %s, dataset %s, run %d (of this execution)" %
+            (benchmark, implementation, stat_config_name, str(stat_config_dict), dataset, run))
 
-def desc_triple(benchmark, implementation, dataset):
-    return "Benchmark %s, implementation %s, dataset %s" % (benchmark, implementation, dataset)
+def desc_quintuple(benchmark, implementation, stat_config_name, stat_config_dict, dataset):
+    if stat_config_dict == {}:
+        stat_config_dict = "None"
+    return ("Benchmark %s, implementation %s, static configuration name %s, static configuration description: %s, dataset %s" %
+            (benchmark, implementation, stat_config_name, str(stat_config_dict), dataset))
 
 # This is a local variable that is only used in evaluation of this execution. For serious data analysis, the folder structure is used.
 def note_result(results, benchmark, implementation, stat_name, stat_dict, dataset, run, runtime):
@@ -325,13 +334,15 @@ def note_result(results, benchmark, implementation, stat_name, stat_dict, datase
     results -- name of dictionary in which runtime is saved (string)
     benchmark -- name of benchmark (string)
     implementation -- name of implementation (string)
+    stat_name -- hash of str(stat_dict)
+    stat_dict -- dictionary of static environment variables
     dataset -- name of dataset. (string)
     run -- run counter (int)
     runtime -- runtime as reported by the implementation. Stored in a list in results.
     """
-    if not((benchmark, implementation, dataset) in results.keys()):
-        results[(benchmark, implementation, dataset)] = []
-    results[(benchmark,implementation,dataset)].append(runtime)
+    if not((benchmark, implementation, stat_name, str(stat_dict), dataset) in results.keys()):
+        results[(benchmark, implementation, stat_name, str(stat_dict), dataset)] = []
+    results[(benchmark,implementation, stat_name, str(stat_dict), dataset)].append(runtime)
 
 def get_nth_moment (result_times, n):
     """ 
@@ -419,15 +430,8 @@ def run_some_benchmark_implementations(hipermark_dir,
     for impl in b.implementations:
         if not run_implementation_fn(impl):
             continue
-        # the os.getcwd ensures that inst_dir is absolute path.
-        # If user has specified absolute path, then the os.getcwd() is ignored.
-        # for all statconfigs
-         #what if this is empty??? Then this will not run even once!
-         # a goto might be used?
-         # sconf is a list of tuples(sconf_name, sconf_dict)
         for sconf in impl.statconfiglist:
-            inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s/%s" %
-                                    (b.name, impl.name, sconf[0]))
+            inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s/%s" % (b.name, impl.name, sconf[0]))
             for dataset in b.datasets:
                 if not use_dataset_fn(dataset):
                     continue
@@ -435,30 +439,25 @@ def run_some_benchmark_implementations(hipermark_dir,
                 # SHOULD impl.instantiate_data have access to the env. vars of impl.statconfiglist??
                 (retcode, stdout, stderr) = impl.instantiate_data(
                     inst_dir, b.datasets[dataset]['input_file'], dataset)
-            if retcode != 0:
-                failed_data_insts.append({ 'benchmark' : b.name,
-                                           'implementation' : impl.name,
-                                           'stat_config_name': sconf[0],
-                                           'stat_config_dict': sconf[1],
-                                           'dataset' : dataset,
-                                           'instantiation_directory' : inst_dir,
-                                           'retcode' : retcode,
-                                           'stdout' : stdout,
-                                           'stderr' : stderr})
-                print("Spoiler: failed")
-            else:
-                data_insts.append({ 'benchmark' : b.name,
-                                    'implementation' : impl.name,
-                                    'stat_config_name': sconf[0],
-                                    'stat_config_dict': sconf[1],
-                                    'dataset' : dataset,
-                                    'instantiation_directory' : inst_dir,
-                                    'expected_output_file' : b.datasets[dataset]['expected_output_file']})
-
-    # def set_env_vars(dict):
-    #     bla
-    #     bla
-    #     return 0
+                if retcode != 0:
+                    failed_data_insts.append({ 'benchmark' : b.name,
+                                               'implementation' : impl.name,
+                                               'stat_config_name': sconf[0],
+                                               'stat_config_dict': sconf[1],
+                                               'dataset' : dataset,
+                                               'instantiation_directory' : inst_dir,
+                                               'retcode' : retcode,
+                                               'stdout' : stdout,
+                                               'stderr' : stderr})
+                    print("Spoiler: failed")
+                else:
+                    data_insts.append({ 'benchmark' : b.name,
+                                        'implementation' : impl.name,
+                                        'stat_config_name': sconf[0],
+                                        'stat_config_dict': sconf[1],
+                                        'dataset' : dataset,
+                                        'instantiation_directory' : inst_dir,
+                                        'expected_output_file' : b.datasets[dataset]['expected_output_file']})
 
     # Running all "instantiate" files
     for impl in b.implementations:
@@ -468,7 +467,6 @@ def run_some_benchmark_implementations(hipermark_dir,
             inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s/%s" %
                                     (b.name, impl.name, sconf[0]))
             print("Instantiating source code in %s" % inst_dir)
-            # set env vars.
             (retcode, stdout, stderr) = impl.instantiate(inst_dir, sconf[1], platform)#compile source code
             if retcode != 0:
                 failed_insts.append({ 'benchmark' : b.name,
@@ -800,46 +798,46 @@ if __name__ == '__main__':
         print(failed['stderr'])
         print("")
 
-    # CODE BELOW THIS MIGHT NEED TO BE MODIFIED TO HANDLE STATIC CONF!
     # These should due to consistency be treated as immutables!
-    successful_quadruple = {}
-    successful_triple = {}
-    failed_quadruple = {}
+    successful_sextuple = {}
+    successful_quintuple = {}
+    failed_sextuple = {}
 
-    for result_triple in results:
+    for result_quintuple in results:
         successful_counter = 0
-        for run in range(len(results[result_triple])):
-            run_desc = results[result_triple][run] # int for success, text string for fail
+        for run in range(len(results[result_quintuple])):
+            run_desc = results[result_quintuple][run] # int for success, text string for fail
             run_tuple = (run,)
-            result_quadruple = result_triple + run_tuple
+            result_sextuple = result_quintuple + run_tuple
             if type(run_desc) is int:
-                successful_quadruple[result_quadruple] = run_desc
+                successful_sextuple[result_sextuple] = run_desc
                 if successful_counter == 0:
-                    successful_triple[result_triple] = []
+                    successful_quintuple[result_quintuple] = []
                 successful_counter += 1
-                successful_triple[result_triple].append(run_desc)
+                successful_quintuple[result_quintuple].append(run_desc)
             else:
-                failed_quadruple[result_quadruple] = run_desc
+                failed_sextuple[result_sextuple] = run_desc
 
     # DO NOT MODIFY successful_triple or successful_quadruple after this line!
 
     print("\nFailed:")
-    for f in failed_quadruple:
-        (benchmark, implementation, dataset, run) = f
+    for f in failed_sextuple:
+        (benchmark, implementation, stat_config_name, stat_config_dict, dataset, run) = f
         print("%s: %s" %
-              (desc_quadruple(benchmark, implementation, dataset, run),
-               failed_quadruple[f]))
+              (desc_sextuple(benchmark, implementation, stat_config_name, stat_config_dict, dataset, run),
+               failed_sextuple[f]))
 
     print("\nSucceeded:")
-    for s in successful_quadruple:
-        (benchmark, implementation, dataset, run) = s
+    for s in successful_sextuple:
+        (benchmark, implementation, stat_config_name, stat_config_dict, dataset, run) = s
         print("%s: %s" %
-              (desc_quadruple(benchmark, implementation, dataset, run),
-               successful_quadruple[s]))
+              (desc_sextuple(benchmark, implementation, stat_config_name, stat_config_dict, dataset, run),
+               successful_sextuple[s]))
 
     print("\nAverage Run Times:")
-    for s in successful_triple:
-        (benchmark, implementation, dataset) = s
-        av, stddev = get_average_and_stddev(successful_triple[s])
+    for s in successful_quintuple:
+        (benchmark, implementation, stat_config_name, stat_config_dict, dataset) = s
+        av, stddev = get_average_and_stddev(successful_quintuple[s])
         rel_stddev = stddev/float(av)
-        print("%s: Average time: %d, standard deviation: %.1f, relative standard deviation: %.1E" % (desc_triple(benchmark, implementation, dataset), av, stddev, rel_stddev))
+        print("%s: Average time: %d, standard deviation: %.1f, relative standard deviation: %.1E" %
+              (desc_quintuple(benchmark, implementation, stat_config_name, stat_config_dict, dataset), av, stddev, rel_stddev))
