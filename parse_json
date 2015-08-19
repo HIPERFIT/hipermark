@@ -104,6 +104,27 @@ def write_multiple_json(l_dict, l_tp):
     for i in range(n):
         write_json(l_dict[i], l_tp[i])
 
+def fail_on_keywords(keyword):
+    raise Exception("Unknown value keyword '%s' in template." % keyword)
+
+def all_possible_configurations(keyword_handler, template):
+    all_configs = [{}]
+    for var in template:
+        options = template[var]
+        if type(options) is not list:
+            options = keyword_handler(options)
+        new_configs = []
+        for config in all_configs:
+            for option in options:
+                if type(option) in [dict, list]:
+                    raise Exception("Invalid value for variable %s in configuration template: %s" %
+                                    (var, options))
+                new_config = config.copy()
+                new_config[var] = str(option)
+                new_configs.append(new_config)
+        all_configs = new_configs
+    return all_configs
+
 if __name__ == "__main__":
     """ This file takes one JSON and writes JSON file(s) back to the HD.
     The values in the input JSON file can be scalars or lists, not new JSON
@@ -120,7 +141,7 @@ if __name__ == "__main__":
     keys = list(dict.keys())
     l = _make_list_from_dict(dict)
     l = _list_multiply(l)
-    ld = _make_list_of_dicts(l, keys)
+    ld = all_possible_configurations(fail_on_keywords, dict)
     path_names = []
     for i in range(len(ld)):
         path_names.append(str(i) + "-testing.json")
