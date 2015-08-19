@@ -10,7 +10,8 @@ import time
 import hashlib
 # The 'six' library could be imported since it is compatible with both P2 and P3.
 
-STAT_CONFIG_FILENAME = "statconfig.json"
+STAT_CONFIG_TEMPLATE_FILENAME = "static_configuration_options_template.json"
+STAT_CONFIG_FILENAME = "static_configuration_options.json"
 STDOUT_FILENAME = "stdout.log"
 STDERR_FILENAME = "stderr.log"
 RETURNCODE_FILENAME = "returncode.txt"
@@ -120,7 +121,7 @@ class Implementation:
         return all_configs
 
     def _gather_statconfigs(self):
-        stat_config_file = os.path.join(self.directory, STAT_CONFIG_FILENAME)
+        stat_config_file = os.path.join(self.directory, STAT_CONFIG_TEMPLATE_FILENAME)
         if not os.path.isfile(stat_config_file):
             self.statconfig_exists = False
             self.statconfiglist = [("default", {})]
