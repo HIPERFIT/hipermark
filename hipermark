@@ -10,20 +10,22 @@ import time
 import hashlib
 # The 'six' library could be imported since it is compatible with both P2 and P3.
 
-STAT_CONFIG_TEMPLATE_FILENAME = "static_configuration_options_template.json"
-STAT_CONFIG_FILENAME = "static_configuration_options.json"
-STDOUT_FILENAME = "stdout.log"
-STDERR_FILENAME = "stderr.log"
-RETURNCODE_FILENAME = "returncode.txt"
-VALIDATION_FILENAME = "validation.txt"
-RESULT_FILENAME = "result.json"
-RUNTIME_FILENAME = "runtime.txt"
-TIMESTAMPSTART_FILENAME = "tsstartrun.txt"
-TIMESTAMPEND_FILENAME = "tsendrun.txt"
-INSTANTIATE_FILENAME = "instantiate"
+STAT_CONFIG_TEMPLATE_FILENAME = "static_configuration_template.json" #READ
+RUNTIME_CONFIG_TEMPLATE_FILENAME = "dynamic_configuration_template.json" #R
+STAT_CONFIG_FILENAME = "static_configuration.json" #WRITTEN
+RUNTIME_CONFIG_FILENAME = "dynamic_configuration.json" #W
+STDOUT_FILENAME = "stdout.log" #W
+STDERR_FILENAME = "stderr.log" #W
+RETURNCODE_FILENAME = "returncode.txt" #W
+VALIDATION_FILENAME = "validation.txt" #W
+RESULT_FILENAME = "result.json" #W (by impl.)
+RUNTIME_FILENAME = "runtime.txt" #W (by impl.)
+TIMESTAMPSTART_FILENAME = "tsstartrun.txt" #W
+TIMESTAMPEND_FILENAME = "tsendrun.txt" #W
+INSTANTIATE_FILENAME = "instantiate" #Not used!
 MAKEFILE_FILENAME = "Makefile"
-EXT_VALIDATION_STDOUT_FILENAME = "ext_val_stdout.log"
-EXT_VALIDATION_STDERR_FILENAME = "ext_val_stderr.log"
+EXT_VALIDATION_STDOUT_FILENAME = "ext_val_stdout.log" #W (by ext. val.)
+EXT_VALIDATION_STDERR_FILENAME = "ext_val_stderr.log" #W (by ext. val.) -- or not used.
 
 def executable(fpath):
     """Returns true if the file exists and can be executed. """
@@ -47,10 +49,6 @@ def mkdir_p(path):
             pass
         else: raise
 
-#class Statconfig:
-
-
-
 class Implementation:
     """An implementation is the source code of a solution to a general problem.
     The hierarchy is: problem -> implementation -> benchmark.
@@ -70,9 +68,11 @@ class Implementation:
         """
         if not os.path.isdir(directory): #returns true if path is an existing directory.
             if os.path.isfile(directory):
-                raise Exception("File %s exists, but implementation should be contained in its own directory." % directory)
+                raise Exception("File %s exists, but implementation should be \
+                contained in its own directory." % directory)
             else:
-                raise Exception("Implementation directory %s does not exist " % directory)
+                raise Exception("Implementation directory %s does not exist "
+                                % directory)
         self.directory = directory
         self.name = name
         self.hipermark_lib_dir = hipermark_lib_dir
@@ -80,7 +80,8 @@ class Implementation:
 
         makefile_file = os.path.join(self.directory, MAKEFILE_FILENAME)
         self.makefile_file = makefile_file
-        self._gather_statconfigs()
+        self._gather_static_configs()
+        self._gather_runtime_configs()
 
     def _fail_on_keywords(keyword):
         raise Exception("Unknown value keyword '%s' in template." %
@@ -113,23 +114,50 @@ class Implementation:
             all_configs = new_configs
         return all_configs
 
-    def _gather_statconfigs(self):
-        stat_config_file = os.path.join(self.directory, STAT_CONFIG_TEMPLATE_FILENAME)
-        if not os.path.isfile(stat_config_file):
-            self.statconfig_exists = False
-            self.statconfiglist = [("default", {})]
+    def _get_hashed_names(self, dicts):
+        """ Returns map (sha256) of a list of dicts. 
+        """
+        return [hashlib.sha256(str(dict)).hexdigest()[0:12] for dict in dicts]
+
+    def _gather_runtime_configs(self):
+        """ Reads the runtime config JSON file and produces the cartesian product
+        of all values therein that are lists."""
+        runtime_config_file = os.path.join(self.directory, RUNTIME_CONFIG_TEMPLATE_FILENAME)
+        if not os.path.isfile(runtime_config_file):
+            self.runtime_config_exists = False
+            self.runtime_config_list = [{'name': "default", 'dict': {}}]
             return
-        self.statconfig_exists = True
-        input_dict = read_json_file(stat_config_file)
-        # what if this is not a JSON?
-        statconfiglist = self._all_possible_configurations(self._fail_on_keywords, input_dict)
-        # generate list of hash names.
-        # A map could be used here.
-        statconfig_names = []
-        for d in statconfiglist:
-            hash_val = hashlib.sha256(str(d)).hexdigest()[0:12]
-            statconfig_names.append(hash_val)
-        self.statconfiglist = zip(statconfig_names, statconfiglist)
+        self.runtime_config_exists = True
+        input_dict = read_json_file(runtime_config_file)
+        runtime_config_list = self._all_possible_configurations(self._fail_on_keywords, input_dict)
+        runtime_config_names = self._get_hashed_names(runtime_config_list)
+        # The next five lines could probably be replaced by map
+        i = int(0)
+        self.runtime_config_list = []
+        for runtime_config in runtime_config_list:
+            self.runtime_config_list.append({'name': runtime_config_names[i],
+                                             'dict': runtime_config})
+            i += 1
+
+    def _gather_static_configs(self):
+        """ Reads the static config JSON file and produces the cartesian product
+        of all values therein that are lists."""
+        static_config_file = os.path.join(self.directory, STAT_CONFIG_TEMPLATE_FILENAME)
+        if not os.path.isfile(static_config_file):
+            self.static_config_exists = False #Unused! Should be used in desc octuple/septuple.
+            self.static_config_list = [{'name': "default", 'dict': {}}]
+            return
+        self.static_config_exists = True
+        input_dict = read_json_file(static_config_file)
+        static_config_list = self._all_possible_configurations(self._fail_on_keywords, input_dict)
+        static_config_names = self._get_hashed_names(static_config_list)
+        # The next five lines could probably be replaced by map
+        i = int(0)
+        self.static_config_list = []
+        for static_config in static_config_list:
+            self.static_config_list.append({'name': static_config_names[i],
+                                             'dict': static_config})
+            i += 1
         
     def instantiate_data(self, inst_dir, input_data, dataset_name):
         """Run the 'make data' script which prepares the input data of the case.
@@ -191,7 +219,7 @@ class Implementation:
         instantiate_env["HIPERMARK_IMPLEMENTATION"] = self.directory
         instantiate_env["HIPERMARK_PLATFORM"] = platform_file
         for sc in static_conf:
-            # should this one include the "HIPERMARK_" prefix?? Unknown if str() is nec. below.
+            # Unknown if str() is nec. below.
             instantiate_env["HIPERMARK_CONFIG_" + str(sc)] = static_conf[sc]
 
         # cwd = inst_dir sets the child process' folder to:
@@ -306,20 +334,24 @@ class Benchmark:
                                        'expected_output_file' : outputfile
             }
 
-def desc_sextuple(benchmark, implementation, stat_config_name, stat_config_dict, dataset, run):
+def desc_octuple(benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, rundataset, run):
     if stat_config_dict == {}:
         stat_config_dict = "None"
-    return ("Benchmark %s, implementation %s, static configuration name %s, static configuration description: %s, dataset %s, run %d (of this execution)" %
-            (benchmark, implementation, stat_config_name, str(stat_config_dict), dataset, run))
+    return ("Benchmark %s, implementation %s, static configuration name %s,\
+    static configuration description: %s, runtime configuration name %s,\
+    runtime configuration description: %s, dataset %s, run %d (of this execution)" %
+            (benchmark, implementation, stat_config_name, str(stat_config_dict), runtime_name, str(runtime_dict), dataset, run))
 
-def desc_quintuple(benchmark, implementation, stat_config_name, stat_config_dict, dataset):
+def desc_septuple(benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset):
     if stat_config_dict == {}:
         stat_config_dict = "None"
-    return ("Benchmark %s, implementation %s, static configuration name %s, static configuration description: %s, dataset %s" %
-            (benchmark, implementation, stat_config_name, str(stat_config_dict), dataset))
+    return ("Benchmark %s, implementation %s, static configuration name %s,\
+    static configuration description: %s, runtime configuration name %s,\
+    runtime configuration description: %s, dataset %s" %
+            (benchmark, implementation, stat_config_name, str(stat_config_dict), runtime_name, str(runtime_dict), dataset))
 
 # This is a local variable that is only used in evaluation of this execution. For serious data analysis, the folder structure is used.
-def note_result(results, benchmark, implementation, stat_name, stat_dict, dataset, run, runtime):
+def note_result(results, benchmark, implementation, stat_name, stat_dict, runtime_name, runtime_dict, dataset, run, runtime):
     """Stores the runtime of the execution of an implementation in a dictionary.
     This dictionary has triple's (benchmark, implementation, dataset) as key.
     The values are stored in a list which indexes over the run counter.
@@ -334,9 +366,9 @@ def note_result(results, benchmark, implementation, stat_name, stat_dict, datase
     run -- run counter (int)
     runtime -- runtime as reported by the implementation. Stored in a list in results.
     """
-    if not((benchmark, implementation, stat_name, str(stat_dict), dataset) in results.keys()):
-        results[(benchmark, implementation, stat_name, str(stat_dict), dataset)] = []
-    results[(benchmark,implementation, stat_name, str(stat_dict), dataset)].append(runtime)
+    if not((benchmark, implementation, stat_name, str(stat_dict), runtime_name, str(runtime_dict), dataset) in results.keys()):
+        results[(benchmark, implementation, stat_name, str(stat_dict), runtime_name, str(runtime_dict), dataset)] = []
+    results[(benchmark,implementation, stat_name, str(stat_dict), runtime_name, str(runtime_dict), dataset)].append(runtime)
 
 def get_nth_moment (result_times, n):
     """ 
@@ -385,7 +417,13 @@ def find_run_counter(target_dir):
                         target_dir)
     if not empty:
         max_number = max(a) + 1
-    return max_number        
+    return max_number
+
+def configure_environment_vars(env_dict, instantiate_env):
+    """ Sets the environment variables according to the dict.
+    """
+    for env_name in env_dict:
+        instantiate_env["HIPERMARK_CONFIG_" + str(env_name)] = env_dict[env_name]
     
 def run_some_benchmark_implementations(hipermark_dir,
                                        workdir,
@@ -424,8 +462,8 @@ def run_some_benchmark_implementations(hipermark_dir,
     for impl in b.implementations:
         if not run_implementation_fn(impl):
             continue
-        for sconf in impl.statconfiglist:
-            inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s/%s" % (b.name, impl.name, sconf[0]))
+        for sconf in impl.static_config_list:
+            inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s/%s" % (b.name, impl.name, sconf['name']))
             for dataset in b.datasets:
                 if not use_dataset_fn(dataset):
                     continue
@@ -434,10 +472,10 @@ def run_some_benchmark_implementations(hipermark_dir,
                 (retcode, stdout, stderr) = impl.instantiate_data(
                     inst_dir, b.datasets[dataset]['input_file'], dataset)
                 if retcode != 0:
-                    failed_data_insts.append({ 'benchmark' : b.name,
-                                               'implementation' : impl.name,
-                                               'stat_config_name': sconf[0],
-                                               'stat_config_dict': sconf[1],
+                    failed_data_insts.append({ 'benchmark' : b,
+                                               'implementation' : impl,
+                                               'stat_config_name': sconf['name'],
+                                               'stat_config_dict': sconf['dict'],
                                                'dataset' : dataset,
                                                'instantiation_directory' : inst_dir,
                                                'retcode' : retcode,
@@ -445,10 +483,10 @@ def run_some_benchmark_implementations(hipermark_dir,
                                                'stderr' : stderr})
                     print("Spoiler: failed")
                 else:
-                    data_insts.append({ 'benchmark' : b.name,
-                                        'implementation' : impl.name,
-                                        'stat_config_name': sconf[0],
-                                        'stat_config_dict': sconf[1],
+                    data_insts.append({ 'benchmark' : b,
+                                        'implementation' : impl,
+                                        'stat_config_name': sconf['name'],
+                                        'stat_config_dict': sconf['dict'],
                                         'dataset' : dataset,
                                         'implementation_makefile' : impl.makefile_file,
                                         'instantiation_directory' : inst_dir,
@@ -458,177 +496,195 @@ def run_some_benchmark_implementations(hipermark_dir,
     for impl in b.implementations:
         if not run_implementation_fn(impl):
             continue
-        for sconf in impl.statconfiglist:
+        for sconf in impl.static_config_list:
             inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s/%s" %
-                                    (b.name, impl.name, sconf[0]))
+                                    (b.name, impl.name, sconf['name']))
             print("Instantiating source code in %s" % inst_dir)
-            (retcode, stdout, stderr) = impl.instantiate(inst_dir, sconf[1], platform)#compile source code
+            (retcode, stdout, stderr) = impl.instantiate(inst_dir, sconf['dict'], platform)#compile source code
             if retcode != 0:
-                failed_insts.append({ 'benchmark' : b.name,
-                                      'implementation' : impl.name,
-                                      'stat_config_name': sconf[0],
-                                      'stat_config_dict': sconf[1],
+                failed_insts.append({ 'benchmark' : b,
+                                      'implementation' : impl,
+                                      'stat_config_name': sconf['name'],
+                                      'stat_config_dict': sconf['dict'],
                                       'instantiation_directory' : inst_dir,
                                       'retcode' : retcode,
                                       'stdout' : stdout,
                                       'stderr' : stderr})
                 print("Ran instantiate. Spoiler: failed")
             else:
-                insts.append({ 'benchmark' : b.name,
-                               'implementation' : impl.name,
-                               'stat_config_name': sconf[0],
-                               'stat_config_dict': sconf[1],
+                insts.append({ 'benchmark' : b,
+                               'implementation' : impl,
+                               'stat_config_name': sconf['name'],
+                               'stat_config_dict': sconf['dict'],
                                'instantiation_directory' : inst_dir,
                                'expected_output_file' : b.datasets[dataset]['expected_output_file']})
 
-    # Here, all data instantiations are looped over and the run file
+    # Here, all data instantiations are looped over and the makefile run
     # is executed for each dataset*statconfig.
     for inst in data_insts:
-        inst_dir = inst['instantiation_directory']
-        path_for_outputs = os.path.join(inst_dir, "run_output/", inst['dataset'])
-        mkdir_p(path_for_outputs)
-        first_run_counter = find_run_counter(path_for_outputs)
-        for run in range(first_run_counter, number_of_runs + first_run_counter):
-            run_output = os.path.join(inst_dir, "run_output/", inst['dataset'], str(run))
-            mkdir_p(run_output)
-            print("\nRunning %s" % run_output)
-            stdoutpath = os.path.join(run_output, STDOUT_FILENAME)
-            stderrpath = os.path.join(run_output, STDERR_FILENAME)
-            returncodepath = os.path.join(run_output, RETURNCODE_FILENAME)
-            validationpath = os.path.join(run_output, VALIDATION_FILENAME)
-            resultpath = os.path.join(run_output, RESULT_FILENAME)
-            runtimepath = os.path.join(run_output, RUNTIME_FILENAME)
-            timestampstartpath = os.path.join(run_output, TIMESTAMPSTART_FILENAME)
-            timestampendpath = os.path.join(run_output, TIMESTAMPEND_FILENAME)
-            with open(stdoutpath, "w") as stdout:
-                with open(stderrpath, "w") as stderr:
-                    with open(returncodepath, "w") as returncode_file:
-                        with open(timestampstartpath, "w") as tsstart_file:
-                            with open(timestampendpath, "w") as tsend_file:
-                                print("Output can be found in %s and %s" % (stdoutpath, stderrpath))
-                                try:
-                                    instantiate_env = os.environ.copy()
-                                    #HIPERMARK_RESULT/RUNTIME: path for implementation to store result/runtime
-                                    instantiate_env["HIPERMARK_INPUT_NAME"] = inst['dataset']
-                                    instantiate_env["HIPERMARK_RESULT"] = resultpath
-                                    instantiate_env["HIPERMARK_RUNTIME"] = runtimepath
-                                    timestamp = time.time()
-                                    tsstart_file.write(str(timestamp) + "\n")
-                                    proc = subprocess.Popen(["make", "-f", inst['implementation_makefile'], "run"],
-                                                            env=instantiate_env,
-                                                            stdout=stdout,
-                                                            stderr=stderr,
-                                                            stdin=subprocess.PIPE,
-                                                            close_fds=True,
-                                                            cwd=inst_dir) #run a case
-                                    proc.stdin.close() # Make sure stdin EOFs.
-                                    proc.wait()
-                                    timestamp = time.time()
-                                    tsend_file.write(str(timestamp) + "\n")
-                                    returncode_file.write(str(proc.returncode) + "\n")
-                                except:
-                                    note_result(results,
-                                                inst['benchmark'],
-                                                inst['implementation'],
-                                                inst['stat_config_name'],
-                                                inst['stat_config_dict'],
-                                                inst['dataset'],
-                                                run,
-                                                "could not run")
-                                    # a call to note_result function adds an entry in the result dict.
-                                    print("Spoiler: failed")
-                                    continue
-                                if proc.returncode != 0:
-                                    note_result(results,
-                                                inst['benchmark'],
-                                                inst['implementation'],
-                                                inst['stat_config_name'],
-                                                inst['stat_config_dict'],
-                                                inst['dataset'],
-                                                run,
-                                                "non-zero exit code")
-                                    print("Spoiler: failed")
-                                    continue
-                                
-                                try:
-                                    runtime = read_runtime(run_output)
-                                except IOError:
-                                    note_result(results,
-                                            inst['benchmark'],
-                                                inst['implementation'],
-                                                inst['stat_config_name'],
-                                                inst['stat_config_dict'],
-                                                inst['dataset'],
-                                                run,
-                                                "no runtime measurement")
-                                    continue
-                                except ValueError:
-                                    note_result(results,
-                                                inst['benchmark'],
-                                                inst['implementation'],
-                                                inst['stat_config_name'],
-                                                inst['stat_config_dict'],
-                                                inst['dataset'],
-                                                run,
-                                                "non-integer runtime measurement")
-                                    continue
-                                
-                                try:
-                                    resultfile = os.path.join(run_output, RESULT_FILENAME)
-                                    expectedfile = inst['expected_output_file']
-                                    if b.external_validation:
-                                        evstdoutpath = os.path.join(run_output, EXT_VALIDATION_STDOUT_FILENAME)
-                                        evstderrpath = os.path.join(run_output, EXT_VALIDATION_STDERR_FILENAME)
-                                        with open(evstdoutpath, 'w') as evstdout:
-                                            with open(evstdoutpath, 'w') as evstderr:
-                                                print("Launching external validation")
-                                                proc = subprocess.Popen([b.external_validation_file, resultfile, expectedfile],
-                                                                        stdout=evstdout,
-                                                                        stderr=evstderr,
-                                                                        stdin=subprocess.PIPE,
-                                                                        close_fds=True,
-                                                                        cwd=inst_dir)
-                                                #return code 0 of above means succesfull val.
-                                                proc.stdin.close() # Make sure stdin EOFs.
-                                                proc.wait()
-                                                match = 1 ^ proc.returncode
-                                    else:
-                                        result = read_json_file(resultfile)
-                                        expected = read_json_file(expectedfile)
-                                        match = compare_json(result, expected)
-                                    f = open(validationpath, "w")
-                                    f.write(str(int(match)) + "\n")
-                                    f.close()
-                                    if match:
+        for runtimeconf in inst['implementation'].runtime_config_list:
+            inst_dir = inst['instantiation_directory']
+            path_for_outputs = os.path.join(inst_dir, "run_output/", inst['dataset'], runtimeconf['name'])
+            mkdir_p(path_for_outputs)
+            first_run_counter = find_run_counter(path_for_outputs)
+            for run in range(first_run_counter, number_of_runs + first_run_counter):
+                run_output = os.path.join(inst_dir, "run_output/", inst['dataset'], runtimeconf['name'], str(run))
+                mkdir_p(run_output)
+                print("\nRunning %s" % run_output)
+                stdoutpath = os.path.join(run_output, STDOUT_FILENAME)
+                stderrpath = os.path.join(run_output, STDERR_FILENAME)
+                returncodepath = os.path.join(run_output, RETURNCODE_FILENAME)
+                validationpath = os.path.join(run_output, VALIDATION_FILENAME)
+                resultpath = os.path.join(run_output, RESULT_FILENAME)
+                runtimepath = os.path.join(run_output, RUNTIME_FILENAME)
+                timestampstartpath = os.path.join(run_output, TIMESTAMPSTART_FILENAME)
+                timestampendpath = os.path.join(run_output, TIMESTAMPEND_FILENAME)
+                with open(stdoutpath, "w") as stdout:
+                    with open(stderrpath, "w") as stderr:
+                        with open(returncodepath, "w") as returncode_file:
+                            with open(timestampstartpath, "w") as tsstart_file:
+                                with open(timestampendpath, "w") as tsend_file:
+                                    print("Output can be found in %s and %s" % (stdoutpath, stderrpath))
+                                    try:
+                                        instantiate_env = os.environ.copy()
+                                        #HIPERMARK_RESULT/RUNTIME: path for implementation to store result/runtime
+                                        instantiate_env["HIPERMARK_INPUT_NAME"] = inst['dataset']
+                                        instantiate_env["HIPERMARK_RESULT"] = resultpath
+                                        instantiate_env["HIPERMARK_RUNTIME"] = runtimepath
+                                        configure_environment_vars(runtimeconf['dict'], instantiate_env)
+                                        with open(os.path.join(run_output, RUNTIME_CONFIG_FILENAME), "w") as fp:
+                                            fp.write(str(runtimeconf['dict']) + "\n")
+                                        timestamp = time.time()
+                                        tsstart_file.write(str(timestamp) + "\n")
+                                        proc = subprocess.Popen(["make", "-f", inst['implementation_makefile'], "run"],
+                                                                env=instantiate_env,
+                                                                stdout=stdout,
+                                                                stderr=stderr,
+                                                                stdin=subprocess.PIPE,
+                                                                close_fds=True,
+                                                                cwd=inst_dir) #run a case
+                                        proc.stdin.close() # Make sure stdin EOFs.
+                                        proc.wait()
+                                        timestamp = time.time()
+                                        tsend_file.write(str(timestamp) + "\n")
+                                        returncode_file.write(str(proc.returncode) + "\n")
+                                    except:
                                         note_result(results,
-                                                    inst['benchmark'],
-                                                    inst['implementation'],
+                                                    inst['benchmark'].name,
+                                                    inst['implementation'].name,
                                                     inst['stat_config_name'],
                                                     inst['stat_config_dict'],
+                                                    runtimeconf['name'],
+                                                    runtimeconf['dict'],
                                                     inst['dataset'],
                                                     run,
-                                                    runtime)
-                                    else:
-                                        note_result(results,
-                                                    inst['benchmark'],
-                                                    inst['implementation'],
-                                                    inst['stat_config_name'],
-                                                    inst['stat_config_dict'],
-                                                    inst['dataset'],
-                                                    run,
-                                                    "result did not match expected result")
-                                except (IOError, ValueError):
-                                    note_result(results,
-                                                inst['benchmark'],
-                                                inst['implementation'],
-                                                inst['stat_config_name'],
-                                                inst['stat_config_dict'],
-                                                inst['dataset'],
-                                                run,
-                                                "cannot read result")
-                                    f = open(validationpath, "w")
-                                    f.write("cannot read result\n")
-                                    f.close()
+                                                    "could not run")
+                                        # a call to note_result function adds an entry in the result dict.
+                                        print("Spoiler: failed")
+                                        continue
+                if proc.returncode != 0:
+                    note_result(results,
+                                inst['benchmark'].name,
+                                inst['implementation'].name,
+                                inst['stat_config_name'],
+                                inst['stat_config_dict'],
+                                runtimeconf['name'],
+                                runtimeconf['dict'],
+                                inst['dataset'],
+                                run,
+                                "non-zero exit code")
+                    print("Spoiler: failed")
+                    continue
+                
+                try:
+                    runtime = read_runtime(run_output)
+                except IOError:
+                    note_result(results,
+                                inst['benchmark'].name,
+                                inst['implementation'].name,
+                                inst['stat_config_name'],
+                                inst['stat_config_dict'],
+                                runtimeconf['name'],
+                                runtimeconf['dict'],
+                                inst['dataset'],
+                                run,
+                                "no runtime measurement")
+                    continue
+                except ValueError:
+                    note_result(results,
+                                inst['benchmark'].name,
+                                inst['implementation'].name,
+                                inst['stat_config_name'],
+                                inst['stat_config_dict'],
+                                runtimeconf['name'],
+                                runtimeconf['dict'],
+                                inst['dataset'],
+                                run,
+                                "non-integer runtime measurement")
+                    continue
+                
+                try:
+                    resultfile = os.path.join(run_output, RESULT_FILENAME)
+                    expectedfile = inst['expected_output_file']
+                    if b.external_validation:
+                        evstdoutpath = os.path.join(run_output, EXT_VALIDATION_STDOUT_FILENAME)
+                        evstderrpath = os.path.join(run_output, EXT_VALIDATION_STDERR_FILENAME)
+                        with open(evstdoutpath, 'w') as evstdout:
+                            with open(evstdoutpath, 'w') as evstderr:
+                                print("Launching external validation")
+                                proc = subprocess.Popen([b.external_validation_file, resultfile, expectedfile],
+                                                        stdout=evstdout,
+                                                        stderr=evstderr,
+                                                        stdin=subprocess.PIPE,
+                                                        close_fds=True,
+                                                        cwd=inst_dir)
+                                #return code 0 of above means succesfull val.
+                        proc.stdin.close() # Make sure stdin EOFs.
+                        proc.wait()
+                        match = 1 ^ proc.returncode
+                    else:
+                        result = read_json_file(resultfile)
+                        expected = read_json_file(expectedfile)
+                        match = compare_json(result, expected)
+                        f = open(validationpath, "w")
+                        f.write(str(int(match)) + "\n")
+                        f.close()
+                    if match:
+                        note_result(results,
+                                    inst['benchmark'].name,
+                                    inst['implementation'].name,
+                                    inst['stat_config_name'],
+                                    inst['stat_config_dict'],
+                                    runtimeconf['name'],
+                                    runtimeconf['dict'],
+                                    inst['dataset'],
+                                    run,
+                                    runtime)
+                    else:
+                        note_result(results,
+                                    inst['benchmark'].name,
+                                    inst['implementation'].name,
+                                    inst['stat_config_name'],
+                                    inst['stat_config_dict'],
+                                    runtimeconf['name'],
+                                    runtimeconf['dict'],
+                                    inst['dataset'],
+                                    run,
+                                    "result did not match expected result")
+                except (IOError, ValueError):
+                    note_result(results,
+                                inst['benchmark'].name,
+                                inst['implementation'].name,
+                                inst['stat_config_name'],
+                                inst['stat_config_dict'],
+                                runtimeconf['name'],
+                                runtimeconf['dict'],
+                                inst['dataset'],
+                                run,
+                                "cannot read result")
+                    f = open(validationpath, "w")
+                    f.write("cannot read result\n")
+                    f.close()
     return (results, failed_insts, failed_data_insts) 
                         
                         
@@ -794,45 +850,45 @@ if __name__ == '__main__':
         print("")
 
     # These should due to consistency be treated as immutables!
-    successful_sextuple = {}
-    successful_quintuple = {}
-    failed_sextuple = {}
+    successful_octuple = {}
+    successful_septuple = {}
+    failed_octuple = {}
 
-    for result_quintuple in results:
+    for result_septuple in results:
         successful_counter = 0
-        for run in range(len(results[result_quintuple])):
-            run_desc = results[result_quintuple][run] # int for success, text string for fail
+        for run in range(len(results[result_septuple])):
+            run_desc = results[result_septuple][run] # int for success, text string for fail
             run_tuple = (run,)
-            result_sextuple = result_quintuple + run_tuple
+            result_octuple = result_septuple + run_tuple
             if type(run_desc) is int:
-                successful_sextuple[result_sextuple] = run_desc
+                successful_octuple[result_octuple] = run_desc
                 if successful_counter == 0:
-                    successful_quintuple[result_quintuple] = []
+                    successful_septuple[result_septuple] = []
                 successful_counter += 1
-                successful_quintuple[result_quintuple].append(run_desc)
+                successful_septuple[result_septuple].append(run_desc)
             else:
-                failed_sextuple[result_sextuple] = run_desc
+                failed_octuple[result_octuple] = run_desc
 
     # DO NOT MODIFY successful_triple or successful_quadruple after this line!
 
     print("\nFailed:")
-    for f in failed_sextuple:
-        (benchmark, implementation, stat_config_name, stat_config_dict, dataset, run) = f
+    for f in failed_octuple:
+        (benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset, run) = f
         print("%s: %s" %
-              (desc_sextuple(benchmark, implementation, stat_config_name, stat_config_dict, dataset, run),
-               failed_sextuple[f]))
+              (desc_octuple(benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset, run),
+               failed_octuple[f]))
 
     print("\nSucceeded:")
-    for s in successful_sextuple:
-        (benchmark, implementation, stat_config_name, stat_config_dict, dataset, run) = s
+    for s in successful_octuple:
+        (benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset, run) = s
         print("%s: %s" %
-              (desc_sextuple(benchmark, implementation, stat_config_name, stat_config_dict, dataset, run),
-               successful_sextuple[s]))
+              (desc_octuple(benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset, run),
+               successful_octuple[s]))
 
     print("\nAverage Run Times:")
-    for s in successful_quintuple:
-        (benchmark, implementation, stat_config_name, stat_config_dict, dataset) = s
-        av, stddev = get_average_and_stddev(successful_quintuple[s])
+    for s in successful_septuple:
+        (benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset) = s
+        av, stddev = get_average_and_stddev(successful_septuple[s])
         rel_stddev = stddev/float(av)
         print("%s: Average time: %d, standard deviation: %.1f, relative standard deviation: %.1E" %
-              (desc_quintuple(benchmark, implementation, stat_config_name, stat_config_dict, dataset), av, stddev, rel_stddev))
+              (desc_septuple(benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset), av, stddev, rel_stddev))
