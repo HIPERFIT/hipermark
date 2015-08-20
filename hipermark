@@ -21,7 +21,7 @@ RUNTIME_FILENAME = "runtime.txt"
 TIMESTAMPSTART_FILENAME = "tsstartrun.txt"
 TIMESTAMPEND_FILENAME = "tsendrun.txt"
 INSTANTIATE_FILENAME = "instantiate"
-INSTANTIATE_DATA_FILENAME = "instantiate_data"
+MAKEFILE_FILENAME = "Makefile"
 EXT_VALIDATION_STDOUT_FILENAME = "ext_val_stdout.log"
 EXT_VALIDATION_STDERR_FILENAME = "ext_val_stderr.log"
 
@@ -79,14 +79,11 @@ class Implementation:
         self.benchmark_lib_dir = benchmark_lib_dir
 
         instantiate_file = os.path.join(self.directory, INSTANTIATE_FILENAME)
-        instantiate_data_file = os.path.join(self.directory, INSTANTIATE_DATA_FILENAME)
+        makefile_file = os.path.join(self.directory, MAKEFILE_FILENAME)
         if not executable(instantiate_file):
             raise Exception("%s does not exist or it is not an executable file" % instantiate_file)
-        if not executable(instantiate_data_file):
-            raise Exception("%s does not exist or it is not an executable file" %
-                            instantiate_data_file)
         self.instantiate_file = instantiate_file
-        self.instantiate_data_file = instantiate_data_file
+        self.makefile_file = makefile_file
         self._gather_statconfigs()
 
     def _fail_on_keywords(keyword):
@@ -139,7 +136,7 @@ class Implementation:
         self.statconfiglist = zip(statconfig_names, statconfiglist)
         
     def instantiate_data(self, inst_dir, input_data, dataset_name):
-        """Run the instantiate_data script which prepares the input data of the case.
+        """Run the 'make data' script which prepares the input data of the case.
 
         keyword arguments:
         inst_dir -- /instantiations/"<benchmark>/<implementation>" (target directory)
@@ -152,14 +149,14 @@ class Implementation:
         # HIPERMARK_LIB_DIR: path of main library. /lib/
         # HIPERMARK_INPUT: path of input file. /benchmarks/<benchmark>/datasets/<dataset>/input.json
         # HIPERMARK_INPUT_NAME: Name of the folder in which the dataset was contained. This
-        # prevents the overwriting of other data files, so instantiate_data must use this 
+        # prevents the overwriting of other data files, so 'make data' must use this 
         # variable.
         instantiate_env = os.environ.copy()
         instantiate_env["HIPERMARK_LIB_DIR"] = self.hipermark_lib_dir
         instantiate_env["HIPERMARK_INPUT"] = input_data
         instantiate_env["HIPERMARK_INPUT_NAME"] = dataset_name
 
-        proc = subprocess.Popen(self.instantiate_data_file,
+        proc = subprocess.Popen(["make", "-f", self.makefile_file, "data"],
                                 env=instantiate_env,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
@@ -427,7 +424,7 @@ def run_some_benchmark_implementations(hipermark_dir,
     results = {} # dict in Python. Like an associative array. key: (bench, impl, dataset)
     # value: list of runtimes. Manipulated through note_result function.
     # Things are overwritten here.
-    # Running all "instantiate_data" files
+    # Running all "make data" targets
     for impl in b.implementations:
         if not run_implementation_fn(impl):
             continue
