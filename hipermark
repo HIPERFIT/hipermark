@@ -117,7 +117,7 @@ class Implementation:
     def _get_hashed_names(self, dicts):
         """ Returns map (sha256) of a list of dicts. 
         """
-        return [hashlib.sha256(str(dict)).hexdigest()[0:12] for dict in dicts]
+        return [hashlib.sha256(str(dict).encode('utf-8')).hexdigest()[0:12] for dict in dicts]
 
     def _gather_runtime_configs(self):
         """ Reads the runtime config JSON file and produces the cartesian product
