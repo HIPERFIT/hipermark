@@ -78,11 +78,7 @@ class Implementation:
         self.hipermark_lib_dir = hipermark_lib_dir
         self.benchmark_lib_dir = benchmark_lib_dir
 
-        instantiate_file = os.path.join(self.directory, INSTANTIATE_FILENAME)
         makefile_file = os.path.join(self.directory, MAKEFILE_FILENAME)
-        if not executable(instantiate_file):
-            raise Exception("%s does not exist or it is not an executable file" % instantiate_file)
-        self.instantiate_file = instantiate_file
         self.makefile_file = makefile_file
         self._gather_statconfigs()
 
@@ -170,9 +166,9 @@ class Implementation:
 
  
     def instantiate(self, inst_dir, static_conf, platform_file):
-        """Runs the instantiate_file which creates a run file to run the
-        implementation and also runs the local Makefile.
-        The instantiate file copies all the necessary source files in its own
+        """Runs 'make' which creates a run file to run the
+        implementation and also runs whatever compilers may be necessary.
+        The Makefile copies all the necessary source files in its own
         folder in /instantiations/.
         The compilation of the implementation source code takes place here.
 
@@ -183,7 +179,7 @@ class Implementation:
         if not os.path.isdir(inst_dir):
             mkdir_p(inst_dir)
 
-        # Sets some environment variables. These are used in the subprocess.Popen function call, and they are handled in the "instantiate" files.
+        # Sets some environment variables. These are used in the subprocess.Popen function call, and they are handled in the Makfile.
         # HIPERMARK_LIB_DIR: /lib/
         # HIPERMARK_BENCHMARK_LIB_DIR: /benchmarks/<benchmark>/lib
         # HIPERMARK_IMPLEMENTATION: /benchmarks/<benchmark>/implementations/<implementation>
@@ -200,7 +196,7 @@ class Implementation:
 
         # cwd = inst_dir sets the child process' folder to:
         # /instantiations/"<benchmark>/<implementation>/"
-        proc = subprocess.Popen(self.instantiate_file,
+        proc = subprocess.Popen(["make", "-f", self.makefile_file],
                                 env=instantiate_env,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
@@ -454,10 +450,11 @@ def run_some_benchmark_implementations(hipermark_dir,
                                         'stat_config_name': sconf[0],
                                         'stat_config_dict': sconf[1],
                                         'dataset' : dataset,
+                                        'implementation_makefile' : impl.makefile_file,
                                         'instantiation_directory' : inst_dir,
                                         'expected_output_file' : b.datasets[dataset]['expected_output_file']})
 
-    # Running all "instantiate" files
+    # Running all Makefiles
     for impl in b.implementations:
         if not run_implementation_fn(impl):
             continue
@@ -517,7 +514,7 @@ def run_some_benchmark_implementations(hipermark_dir,
                                     instantiate_env["HIPERMARK_RUNTIME"] = runtimepath
                                     timestamp = time.time()
                                     tsstart_file.write(str(timestamp) + "\n")
-                                    proc = subprocess.Popen(os.path.join(inst_dir, "run"),
+                                    proc = subprocess.Popen(["make", "-f", inst['implementation_makefile'], "run"],
                                                             env=instantiate_env,
                                                             stdout=stdout,
                                                             stderr=stderr,
