@@ -1,7 +1,0 @@
-{
-    "REAL_TYPE": ["float","double","quadruple"],
-    "OPTIMIZATIONS": [0, 1],
-    "ANOTHER_FIELD": [-1, 0, 1, 42],
-    "YANF": ["yes", "no"]
-
-}
