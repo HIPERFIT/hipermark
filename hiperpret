@@ -54,18 +54,18 @@ def get_average_and_stddev (result_times):
 
 
 class Run:
-    def __init__(self, benchmark_name,
-                 implementation_name,
-                 static_config_name,
-                 dataset_name,
-                 dynamic_config_name,
+    def __init__(self, benchmark,
+                 implementation,
+                 static_configuration,
+                 case,
+                 dynamic_configuration,
                  runnum,
                  directory):
-        self.benchmark_name = benchmark_name
-        self.implementation_name = implementation_name
-        self.static_configuration_name = static_config_name
-        self.dataset_name = dataset_name
-        self.dynamic_configuration_name = dynamic_config_name
+        self.benchmark = benchmark
+        self.implementation = implementation
+        self.static_configuration = static_configuration
+        self.case = case
+        self.dynamic_configuration = dynamic_configuration
         self.name = runnum
         self.directory = directory
         rundir_content = [RESULT_FILENAME, RETURNCODE_FILENAME, RUNTIME_FILENAME,\
@@ -105,27 +105,27 @@ class Run:
                                         the result files in %s was malformed:\
                                         %s." % (self.directory, e.args()))
 
-            def __str__(self):
-                return "benchmark: {0}, \
-                implementation: {1}, \
-                static configuration name: {2}, \
-                dataset: {3}, \
-                dynamic configuration name: {4}\
-                run number: {5}"
-                .format(self.benchmark_name,
-                        self.implementation_name,
-                        self.static_configuration_name,
-                        self.dataset_name,
-                        self.dynamic_configuration_name,
-                        str(self.runnum))
+    def __str__(self):
+        return "benchmark: {0}, \
+        implementation: {1}, \
+        static configuration: {2}, \
+        dataset: {3}, \
+        dynamic configuration: {4}\
+        run number: {5}"\
+        .format(self.benchmark.name,
+                self.implementation.name,
+                str(self.static_configuration.dict),
+                self.case.name,
+                str(self.dynamic_configuration.dict),
+                str(self.name))
 
 class Dynamic_configuration:
-    def __init__(self, benchmark_name, implementation_name,
-                 static_config_name, dataset_name, name, directory):
-        self.benchmark_name = benchmark_name
-        self.implementation_name = implementation_name
-        self.static_configuration_name = static_config_name
-        self.dataset_name = dataset_name
+    def __init__(self, benchmark, implementation,
+                 static_configuration, case, name, directory):
+        self.benchmark = benchmark
+        self.implementation = implementation
+        self.static_configuration = static_configuration
+        self.case = case
         self.name = name
         self.directory = directory
         self.runs = {}
@@ -136,7 +136,7 @@ class Dynamic_configuration:
             runtime variables. If no runtime vars, a file containing \
             \"{}\" should still be here." % self.directory)
         try:
-            self.dynamic_configuration = read_json_file(dconf_filename)
+            self.dict = read_json_file(dconf_filename)
         except ValueError as e:
             print("Error reading JSON")
             print(e.args)
@@ -156,24 +156,25 @@ class Dynamic_configuration:
                 if runnum < 0:
                     raise Exception("Only non-negative run numbers (i.e., directory names)\
                 are allowed in %s." % target_dir)
-                self.runs[runnum] = Run(self.benchmark_name, self.implementation_name,
-                                        self.static_configuration_name, self.dataset_name,
-                                        self.name, runnum, runpath)
+                self.runs[runnum] = Run(self.benchmark, self.implementation,
+                                        self.static_configuration, self.case,
+                                        self, runnum, runpath)
             except ValueError:
                 raise Exception("The folder %s may only contain folders with\
                 integer name." % self.directory)
 
-            def __str__(self):
-                return "benchmark: {0}, \
-                implementation: {1}, \
-                static configuration name: {2}, \
-                dataset: {3}, \
-                dynamic configuration name: {4}"\
-                .format(self.benchmark_name,
-                        self.implementation_name,
-                        self.static_configuration_name,
-                        self.dataset_name,
-                        self.name)
+
+    def __str__(self):
+        return "benchmark: {0}, \
+        implementation: {1}, \
+        static configuration: {2}, \
+        dataset: {3}, \
+        dynamic configuration: {4}"\
+        .format(self.benchmark.name,
+                self.implementation.name,
+                str(self.static_configuration.dict),
+                self.case.name,
+                self.name)
             
             
 
@@ -186,11 +187,11 @@ class Dynamic_configuration:
 
 # A case now also contains a static configuration parameteer
 class Case:
-    def __init__(self, benchmark_name, implementation_name,
-                 static_config_name, name, directory):
-        self.benchmark_name = benchmark_name
-        self.implementation_name = implementation_name
-        self.static_configuration_name = static_config_name
+    def __init__(self, benchmark, implementation,
+                 static_configuration, name, directory):
+        self.benchmark = benchmark
+        self.implementation = implementation
+        self.static_configuration = static_configuration
         self.name = name # name of a dataset.
         self.directory = directory
         self.dynamic_configurations = {}
@@ -203,27 +204,27 @@ class Case:
                                 (self.directory,
                                  dconf_path))
             self.dynamic_configurations[dconf] \
-                = Dynamic_configuration(self.benchmark_name,
-                                        self.implementation_name,
-                                        self.static_configuration_name,
-                                        self.name,
+                = Dynamic_configuration(self.benchmark,
+                                        self.implementation,
+                                        self.static_configuration,
+                                        self,
                                         dconf,
                                         dconf_path)
-            
-            def __str__(self):
-                return "benchmark: {0}, \
-                implementation: {1}, \
-                static configuration name: {2}, \
-                dataset: {3}"\
-                .format(self.benchmark_name,
-                        self.implementation_name,
-                        self.static_configuration_name,
-                        self.name)
- 
+
+    def __str__(self):
+        return "benchmark: {0}, \
+        implementation: {1}, \
+        static configuration: {2}, \
+        dataset: {3}"\
+        .format(self.benchmark.name,
+                self.implementation.name,
+                str(self.static_configuration.dict),
+                self.name)
+    
 class Static_configuration:
-    def __init__(self, benchmark_name, implementation_name, name, directory):
-        self.benchmark_name = benchmark_name
-        self.implementation_name = implementation_name
+    def __init__(self, benchmark, implementation, name, directory):
+        self.benchmark = benchmark
+        self.implementation = implementation
         self.name = name
         self.directory = directory
         self.cases = {}
@@ -240,7 +241,7 @@ class Static_configuration:
             should." % (self.directory, RUN_OUTPUT_PATH))
         # what if this is a malformed JSON??
         try:
-            self.static_configuration = read_json_file(sconf_filename)
+            self.dict = read_json_file(sconf_filename)
         except ValueError as e:
             print("\n" + str(e.args) + "\n")
             raise Exception("Error reading JSON file: %s" % sconf_filename)
@@ -252,27 +253,26 @@ class Static_configuration:
             if not os.path.isdir(dataset_path):
                 raise Exception("The folder %s may only contain folders with \
                 names of datasets." % run_output_path)
-            self.cases[dataset] = Case(self.benchmark_name,
-                                       self.implementation_name,
-                                       self.name,
+            self.cases[dataset] = Case(self.benchmark,
+                                       self.implementation,
+                                       self,
                                        dataset,
                                        dataset_path)
         if empty:
             raise Exception("%s does not contain folder(s) for datasets as it\
             should" % run_output_path)
 
-            def __str__(self):
-                return "benchmark: {0},\
-                implementation: {1},\
-                static configuration name: {2}."\
-                .format(self.benchmark_name,
-                        self.implementation_name,
-                        self.name)
-
+    def __str__(self):
+        return "benchmark: {0}, \
+        implementation: {1}, \
+        static configuration: {2}"\
+        .format(self.benchmark.name,
+                self.implementation.name,
+                str(self.dict))
     
 class Implementation:
-    def __init__(self, benchmark_name, name, directory):
-        self.benchmark_name = benchmark_name
+    def __init__(self, benchmark, name, directory):
+        self.benchmark = benchmark
         self.name = name
         self.directory = directory
         self.static_configs = {}
@@ -288,15 +288,17 @@ class Implementation:
                 But %s is not a folder." % (run_outputdir, sconf_dir))
             # Here, the keys of the cases will be hash values.
             self.static_configs[sconf] = \
-            Static_configuration(self.benchmark_name, self.name,
+            Static_configuration(self.benchmark, self,
                                  sconf, sconf_dir)
         if empty:
                 raise Exception("No folders for static configurations was found\
                 in %s." % self.directory)
             
     def __str__(self):
-        return "benchmark: {0}, implementation: {1}."\
-            .format(self.benchmark_name, self.name)
+        return "benchmark: {0}, \
+        implementation: {1}"\
+        .format(self.benchmark.name,
+                self.name)
     
 class Benchmark:
     def __init__(self, name, directory):
@@ -311,9 +313,9 @@ class Benchmark:
                 only contain directories. %s is not a directory." %
                                 (self.name, impldir))
             implname = os.path.basename(impldir)
-            self.implementations[implname] = Implementation(self.name,
-                                                             implname,
-                                                             impldir)
+            self.implementations[implname] = Implementation(self,
+                                                            implname,
+                                                            impldir)
             
     def __str__(self):
         """ This function allows for printing of benchmark objects.
@@ -345,8 +347,12 @@ lvc = b['LocVolCalib']
 print(lvc)
 compn = lvc.implementations['cpp_openmp_naive']
 print(compn)
-print(compn.static_configs)
 sc0 = compn.static_configs['b335a81d722b']
 print(sc0)
-medium = sc0.datasets['medium']
-dc0
+medium = sc0.cases['medium']
+print(medium)
+dc0 = medium.dynamic_configurations['0ea96b5a5a40']
+print(dc0)
+run0 = dc0.runs[0]
+print(run0)
+print("Retcode: {0}\n runtime: {1}\n stderr: {2}\n stdout: {3}\n ts end: {4}\n ts start: {5}\n validation: {6}".format(run0.retcode, run0.runtime, run0.stderr, run0.stdout, run0.ts_end, run0.ts_start, run0.validation))
