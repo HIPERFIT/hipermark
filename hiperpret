@@ -3,18 +3,20 @@
 import os
 import sys
 import math
+import json
 
 # CAPITALIZE CONST NAMES
-result_file = "result.json"
-returncode_file = "returncode.txt"
-runtime_file = "runtime.txt"
-stderr_file = "stderr.log"
-stdout_file = "stdout.log"
-validation_file = "validation.txt"
+RESULT_FILENAME = "result.json"
+RETURNCODE_FILENAME = "returncode.txt"
+RUNTIME_FILENAME = "runtime.txt"
+STDERR_FILENAME = "stderr.log"
+STDOUT_FILENAME = "stdout.log"
+TIMESTAMP_END_FILENAME = "tsendrun.txt"
+TIMESTAMP_START_FILENAME = "tsstartrun.txt"
+VALIDATION_FILENAME = "validation.txt"
 STATIC_CONFIGURATION_FILENAME = "static_configuration.json"
+DYNAMIC_CONFIGURATION_FILENAME = "dynamic_configuration.json"
 RUN_OUTPUT_PATH = "run_output"
-
-rundir_content = [result_file, returncode_file, runtime_file, stderr_file, stdout_file, validation_file]
 
 def read_json_file(filename):
     """ returns an array containing the content of the JSON file.
@@ -23,7 +25,7 @@ def read_json_file(filename):
     filename -- name of json file to interpret
     """
     with open(filename, "r") as file:
-        return json.loads(file.read())
+        return json.loads(str(file.read()))
 
 
 def get_nth_moment (result_times, n):
@@ -34,6 +36,7 @@ def get_nth_moment (result_times, n):
     result_times -- list of result times (floats)
     n -- integer describing that statistical moment of result_times which is returned
     """
+    # rewrite to use map.
     suml = 0
     N = len(result_times)
     for i in range(N):
@@ -53,30 +56,54 @@ def get_average_and_stddev (result_times):
 class Run:
     def __init__(self, benchmark_name,
                  implementation_name,
+                 static_config_name,
                  dataset_name,
+                 dynamic_config_name,
                  runnum,
                  directory):
         self.benchmark_name = benchmark_name
         self.implementation_name = implementation_name
+        self.static_configuration_name = static_config_name
         self.dataset_name = dataset_name
-        self.runnum = runnum
+        self.dynamic_configuration_name = dynamic_config_name
+        self.name = runnum
         self.directory = directory
+        rundir_content = [RESULT_FILENAME, RETURNCODE_FILENAME, RUNTIME_FILENAME,\
+                          STDERR_FILENAME, STDOUT_FILENAME, TIMESTAMP_END_FILENAME,\
+                          TIMESTAMP_START_FILENAME, VALIDATION_FILENAME]
         dircontents = os.listdir(self.directory)
         N = len(rundir_content)
         for i in range(N):
             if not rundir_content[i] in dircontents:
                 raise Exception("The folder %s does not contain the file %s." %
                                 (self.directory, rundir_content[i]))
-        with open(os.path.join(self.directory, rundir_content[1]), "r") as retcode_file:
-            with open(os.path.join(self.directory, rundir_content[2]), "r") as runtime_file:
-                with open(os.path.join(self.directory, rundir_content[5]), "r") as validation_file:
-                    try:
-                        self.retcode = int(retcode_file.read())
-                        self.runtime = int(runtime_file.read())
-                        self.validation = int(validation_file.read())
-                    except ValueError:
-                        raise Exception("The content of either the %s, %s, or %s was not an integer." %
-                                        (rundir_content[1], rundir_content[2], rundir_content[5]))
+        with open(os.path.join(self.directory,
+                               RETURNCODE_FILENAME), "r") as retcode_fp:
+            with open(os.path.join(self.directory,
+                                   RUNTIME_FILENAME), "r") as runtime_fp:
+                with open(os.path.join(self.directory,
+                                       STDERR_FILENAME), "r") as stderr_fp:
+                    with open(os.path.join(self.directory,
+                                           STDOUT_FILENAME), "r") as stdout_fp:
+                        with open(os.path.join(self.directory,
+                                               TIMESTAMP_END_FILENAME), "r") as ts_end_fp:
+                            with open(os.path.join(self.directory,
+                                                   TIMESTAMP_START_FILENAME), "r") as ts_start_fp:
+                                with open(os.path.join(self.directory,
+                                                       VALIDATION_FILENAME), "r") as validation_fp:                        
+                                    try:
+                                        self.retcode = int(retcode_fp.read())
+                                        self.runtime = int(runtime_fp.read())
+                                        self.stderr = str(stderr_fp.read())
+                                        self.stdout = str(stdout_fp.read())
+                                        self.ts_end = float(ts_end_fp.read())
+                                        self.ts_start = float(ts_start_fp.read())
+                                        self.validation = int(validation_fp.read())
+                                    except ValueError as e:
+                                        # How are the arguments of the exception presented?
+                                        raise Exception("The content of one of\
+                                        the result files in %s was malformed:\
+                                        %s." % (self.directory, e.args()))
     def __str__(self):
         a = "benchmark: {0}, implementation: {1},\
 dataset: {2}, run number: {3}".format(self.benchmark_name,
@@ -86,6 +113,50 @@ dataset: {2}, run number: {3}".format(self.benchmark_name,
         return a
 
 class Dynamic_configuration:
+    def __init__(self, benchmark_name, implementation_name,
+                 static_config_name, dataset_name, name, directory):
+        self.benchmark_name = benchmark_name
+        self.implementation_name = implementation_name
+        self.static_configuration_name = static_config_name
+        self.dataset_name = dataset_name
+        self.name = name
+        self.directory = directory
+        self.runs = {}
+        dconf_filename = os.path.join(self.directory,
+                                      DYNAMIC_CONFIGURATION_FILENAME)
+        if not os.path.isfile(dconf_filename):
+            raise Exception("%s does not contain a file describing its \
+            runtime variables. If no runtime vars, a file containing \
+            \"{}\" should still be here." % self.directory)
+        try:
+            self.dynamic_configuration = read_json_file(dconf_filename)
+        except ValueError as e:
+            print("Error reading JSON")
+            print(e.args)
+            raise Exception("Error reading JSON file %s", dconf_filename)
+        dircontents = os.listdir(self.directory)
+        for run in dircontents:
+            if run == DYNAMIC_CONFIGURATION_FILENAME:
+                continue
+            runpath = os.path.join(self.directory, run)
+            if not os.path.isdir(runpath):
+                raise Exception("%s may only contain %s and directories \
+                containing runs. %s is neither." %
+                                (self.directory, DYNAMIC_CONFIGURATION_FILENAME,
+                                 runpath))
+            try:
+                runnum = int(run)
+                if runnum < 0:
+                    raise Exception("Only non-negative run numbers (i.e., directory names)\
+                are allowed in %s." % target_dir)
+                self.runs[runnum] = Run(self.benchmark_name, self.implementation_name,
+                                        self.static_configuration_name, self.dataset_name,
+                                        self.name, runnum, runpath)
+            except ValueError:
+                raise Exception("The folder %s may only contain folders with\
+                integer name." % self.directory)
+            
+
     # The dynamic configuration JSON is stored in the folder with
     # the name of the configuration. (hash(dict)).
     # A dynamic configuration contains a number of runs.
@@ -95,35 +166,35 @@ class Dynamic_configuration:
 
 # A case now also contains a static configuration parameteer
 class Case:
-    def __init__(self, benchmark_name, implementation_name, dataset_name, directory):
+    def __init__(self, benchmark_name, implementation_name,
+                 static_config_name, dataset_name, directory):
         self.benchmark_name = benchmark_name
         self.implementation_name = implementation_name
+        self.static_configuration_name = static_config_name
         self.dataset_name = dataset_name
         self.directory = directory
-        self.runs = {}
+        self.dynamic_configurations = {}
         dircontents = os.listdir(self.directory)
-        for run in dircontents:
-            try:
-                runnum = int(run)
-                rundir = os.path.join(self.directory, run)
-                if not os.path.isdir(rundir):
-                    raise Exception("The folder %s may only contain folders. %s is not a folder." %
-                                    (self.directory, rundir))
-                if runnum < 0:
-                    raise Exception("Folder names in %s must be non-negative integers." %
-                                    self.directory)
-                self.runs[runnum] = Run(self.benchmark_name,
-                                     self.implementation_name,
-                                     self.dataset_name,
-                                     runnum,
-                                     rundir)
-            except ValueError:
-                raise Exception("The folder %s may only contain folders with integer names.")
-            
+        for dconf in dircontents:
+            dconf_path = os.path.join(self.directory, dconf)
+            if not os.path.isdir(dconf_path):
+                raise Exception("%s may only contain folder containing dynamic\
+                variables configurations. %s is not a folder" %
+                                (self.directory,
+                                 dconf_path))
+            self.dynamic_configurations[dconf] \
+                = Dynamic_configuration(self.benchmark_name,
+                                        self.implementation_name,
+                                        self.static_configuration_name,
+                                        self.dataset_name,
+                                        dconf,
+                                        dconf_path)
+               
     def __str__(self):
-        return "benchmark: {0}, implementation: {1}, dataset: {2}".format(self.benchmark_name,
-                                                                       self.implementation_name,
-                                                                       self.dataset_name)    
+        return "benchmark: {0}, implementation: {1}, \
+        dataset: {2}".format(self.benchmark_name,
+                             self.implementation_name,
+                             self.dataset_name)
  
 class Static_configuration:
     def __init__(self, benchmark_name, implementation_name, name, directory):
@@ -144,9 +215,15 @@ class Static_configuration:
             raise Exception("%s does not contain a folder called %s as it \
             should." % (self.directory, RUN_OUTPUT_PATH))
         # what if this is a malformed JSON??
-        self.static_configuration = read_json_file()
+        try:
+            self.static_configuration = read_json_file(sconf_filename)
+        except ValueError as e:
+            print("\n" + str(e.args) + "\n")
+            raise Exception("Error reading JSON file: %s" % sconf_filename)
         datasets = os.listdir(run_output_path)
+        empty = True
         for dataset in datasets:
+            empty = False
             dataset_path = os.path.join(run_output_path, dataset)
             if not os.path.isdir(dataset_path):
                 raise Exception("The folder %s may only contain folders with \
@@ -156,13 +233,9 @@ class Static_configuration:
                                        self.name,
                                        dataset,
                                        dataset_path)
-        
-        
-    # a name, a dict describing the static conf.
-    # Read the static configuration from JSON
-    # Verfify that name is correct?
-    # Contains a static configuration file which should be read. Also contains a datasets folder.
-    # Also contains a run_output folder.
+        if empty:
+            raise Exception("%s does not contain folder(s) for datasets as it\
+            should" % run_output_path)
     
 class Implementation:
     def __init__(self, benchmark_name, name, directory):
@@ -172,21 +245,21 @@ class Implementation:
         self.static_configs = {}
         empty = True
         # contains only folders with statconf names.
-        dircontents = os.listdir(self.benchmark_name)
-        for static_config in dircontents:
+        dircontents = os.listdir(self.directory)
+        for sconf in dircontents:
             empty = False
-            static_config_dir = os.path.join(self.directory, static_config)
-            if not os.path.isdir(static_config_dir):
+            sconf_dir = os.path.join(self.directory, sconf)
+            if not os.path.isdir(sconf_dir):
                 raise Exception("The content of %s must be folders with names \
                 for static configurations (hash values).\
-                But %s is not a folder." % (run_outputdir, dsname))
+                But %s is not a folder." % (run_outputdir, sconf_dir))
             # Here, the keys of the cases will be hash values.
-            self.static_configs[static_config] = \
+            self.static_configs[sconf] = \
             Static_configuration(self.benchmark_name, self.name,
-                                 static_config, static_config_dir)
+                                 sconf, sconf_dir)
         if empty:
                 raise Exception("No folders for static configurations was found\
-                in %s. %s is empty.", (%self.directory, self.directory))
+                in %s." % self.directory)
             
     def __str__(self):
         return "benchmark: {0}, implementation: {1}."\
@@ -235,30 +308,10 @@ for bm in dircontents:
     name = os.path.basename(os.path.normpath(bm))
     b[name] = Benchmark(name, bmdir)
 
-
-# Various testing. BEGIN.
-bm = b['InterestCalib']
-imp = bm.implementations['CppOpenMP']
-case = imp.cases['small']
-run = case.runs[0]
-run_time = run.runtime
-print(bm)
-print(imp)
-print(case)
-print(run)
-print(run_time)
-print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, \
-run number: %d is: %d" % (bm.name, imp.name,
-                          case.dataset_name, run.runnum, run.runtime))
-print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s,\
- run number: %d is: %d" % (run.benchmark_name, run.implementation_name,
-                           run.dataset_name, run.runnum, run.runtime))
-print(bm)
-print(imp)
-print(case)
-print(run)
-# Various testing. END.
-
-# a case can be interpreted meaning that the independant variable is run number. No uncertainty.
-# an implementation can be interpreted meaning that the independent variable is dataset name. The uncertainty is the observed uncertainty by iterating over the run numbers.
-# a benchmark can be interpreted such that the independent variable is both implementation and dataset name. A 3-D plot could prob. be made. Uncertainty as above. 
+lvc = b['LocVolCalib']
+print(lvc)
+compn = lvc.implementations['cpp_openmp_naive']
+print(compn)
+print(compn.static_configs)
+sc1 = compn.static_configs['b335a81d722b']
+print(sc1)

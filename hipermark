@@ -236,7 +236,7 @@ class Implementation:
         (stdoutdata, stderrdata) = proc.communicate(input=None)
         # should this one write the static_conf file to the inst_dir??
         with open(os.path.join(inst_dir, STAT_CONFIG_FILENAME), "w") as fp:
-            fp.write(str(static_conf) + "\n")
+            fp.write(json.dumps(static_conf))
         return (proc.returncode, stdoutdata, stderrdata)
 
 class Benchmark:
@@ -531,7 +531,7 @@ def run_some_benchmark_implementations(hipermark_dir,
             mkdir_p(path_for_outputs)
             # write runtime configuration into JSON file
             with open(os.path.join(path_for_outputs, RUNTIME_CONFIG_FILENAME), "w") as fp:
-                fp.write(str(runtimeconf['dict']) + "\n")
+                fp.write(json.dumps(runtimeconf['dict']))
             first_run_counter = find_run_counter(path_for_outputs)
             for run in range(first_run_counter, number_of_runs + first_run_counter):
                 run_output = os.path.join(inst_dir, "run_output/", inst['dataset'], runtimeconf['name'], str(run))
