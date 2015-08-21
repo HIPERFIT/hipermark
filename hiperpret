@@ -174,7 +174,7 @@ class Dynamic_configuration:
                 self.implementation.name,
                 str(self.static_configuration.dict),
                 self.case.name,
-                self.name)
+                str(self.dict))
             
             
 
@@ -348,11 +348,11 @@ lvc = b['LocVolCalib']
 print(lvc)
 compn = lvc.implementations['cpp_openmp_naive']
 print(compn)
-sc0 = compn.static_configs['b335a81d722b']
+sc0 = compn.static_configs['11b90a2e2f08']
 print(sc0)
 medium = sc0.cases['medium']
 print(medium)
-dc0 = medium.dynamic_configurations['0ea96b5a5a40']
+dc0 = medium.dynamic_configurations['5171205a378a']
 print(dc0)
 run0 = dc0.runs[0]
 print(run0)
