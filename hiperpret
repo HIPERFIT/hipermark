@@ -104,13 +104,20 @@ class Run:
                                         raise Exception("The content of one of\
                                         the result files in %s was malformed:\
                                         %s." % (self.directory, e.args()))
-    def __str__(self):
-        a = "benchmark: {0}, implementation: {1},\
-dataset: {2}, run number: {3}".format(self.benchmark_name,
-                                      self.implementation_name,
-                                      self.dataset_name,
-                                      str(self.runnum))
-        return a
+
+            def __str__(self):
+                return "benchmark: {0}, \
+                implementation: {1}, \
+                static configuration name: {2}, \
+                dataset: {3}, \
+                dynamic configuration name: {4}\
+                run number: {5}"
+                .format(self.benchmark_name,
+                        self.implementation_name,
+                        self.static_configuration_name,
+                        self.dataset_name,
+                        self.dynamic_configuration_name,
+                        str(self.runnum))
 
 class Dynamic_configuration:
     def __init__(self, benchmark_name, implementation_name,
@@ -155,6 +162,19 @@ class Dynamic_configuration:
             except ValueError:
                 raise Exception("The folder %s may only contain folders with\
                 integer name." % self.directory)
+
+            def __str__(self):
+                return "benchmark: {0}, \
+                implementation: {1}, \
+                static configuration name: {2}, \
+                dataset: {3}, \
+                dynamic configuration name: {4}"\
+                .format(self.benchmark_name,
+                        self.implementation_name,
+                        self.static_configuration_name,
+                        self.dataset_name,
+                        self.name)
+            
             
 
     # The dynamic configuration JSON is stored in the folder with
@@ -167,11 +187,11 @@ class Dynamic_configuration:
 # A case now also contains a static configuration parameteer
 class Case:
     def __init__(self, benchmark_name, implementation_name,
-                 static_config_name, dataset_name, directory):
+                 static_config_name, name, directory):
         self.benchmark_name = benchmark_name
         self.implementation_name = implementation_name
         self.static_configuration_name = static_config_name
-        self.dataset_name = dataset_name
+        self.name = name # name of a dataset.
         self.directory = directory
         self.dynamic_configurations = {}
         dircontents = os.listdir(self.directory)
@@ -186,15 +206,19 @@ class Case:
                 = Dynamic_configuration(self.benchmark_name,
                                         self.implementation_name,
                                         self.static_configuration_name,
-                                        self.dataset_name,
+                                        self.name,
                                         dconf,
                                         dconf_path)
-               
-    def __str__(self):
-        return "benchmark: {0}, implementation: {1}, \
-        dataset: {2}".format(self.benchmark_name,
-                             self.implementation_name,
-                             self.dataset_name)
+            
+            def __str__(self):
+                return "benchmark: {0}, \
+                implementation: {1}, \
+                static configuration name: {2}, \
+                dataset: {3}"\
+                .format(self.benchmark_name,
+                        self.implementation_name,
+                        self.static_configuration_name,
+                        self.name)
  
 class Static_configuration:
     def __init__(self, benchmark_name, implementation_name, name, directory):
@@ -236,6 +260,15 @@ class Static_configuration:
         if empty:
             raise Exception("%s does not contain folder(s) for datasets as it\
             should" % run_output_path)
+
+            def __str__(self):
+                return "benchmark: {0},\
+                implementation: {1},\
+                static configuration name: {2}."\
+                .format(self.benchmark_name,
+                        self.implementation_name,
+                        self.name)
+
     
 class Implementation:
     def __init__(self, benchmark_name, name, directory):
@@ -313,5 +346,7 @@ print(lvc)
 compn = lvc.implementations['cpp_openmp_naive']
 print(compn)
 print(compn.static_configs)
-sc1 = compn.static_configs['b335a81d722b']
-print(sc1)
+sc0 = compn.static_configs['b335a81d722b']
+print(sc0)
+medium = sc0.datasets['medium']
+dc0
