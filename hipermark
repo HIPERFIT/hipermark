@@ -210,13 +210,13 @@ class Implementation:
         # Sets some environment variables. These are used in the subprocess.Popen function call, and they are handled in the Makfile.
         # HIPERMARK_LIB_DIR: /lib/
         # HIPERMARK_BENCHMARK_LIB_DIR: /benchmarks/<benchmark>/lib
-        # HIPERMARK_IMPLEMENTATION: /benchmarks/<benchmark>/implementations/<implementation>
+        # HIPERMARK_IMPLEMENTATION_DIR: /benchmarks/<benchmark>/implementations/<implementation>
         # HIPERMARK_PLATFORM: path of platform file. /config/platform_example.json
         # env. vars should be set in seperate function.
         instantiate_env = os.environ.copy()
         instantiate_env["HIPERMARK_LIB_DIR"] = self.hipermark_lib_dir
         instantiate_env["HIPERMARK_BENCHMARK_LIB_DIR"] = self.benchmark_lib_dir
-        instantiate_env["HIPERMARK_IMPLEMENTATION"] = self.directory
+        instantiate_env["HIPERMARK_IMPLEMENTATION_DIR"] = self.directory
         instantiate_env["HIPERMARK_PLATFORM"] = platform_file
         for sc in static_conf:
             # Unknown if str() is nec. below.
