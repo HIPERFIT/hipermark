@@ -343,6 +343,7 @@ for bm in dircontents:
     name = os.path.basename(os.path.normpath(bm))
     b[name] = Benchmark(name, bmdir)
 
+# Testing occurs below this line. Specific dataset is needed for this to work.    
 lvc = b['LocVolCalib']
 print(lvc)
 compn = lvc.implementations['cpp_openmp_naive']
