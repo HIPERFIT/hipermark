@@ -406,11 +406,14 @@ def find_run_counter(target_dir):
     try:
         a = []
         for path in dirlist:
+            # Allow for the runtime config file to be located here.
+            if path == RUNTIME_CONFIG_FILENAME:
+                continue
             empty = False
             b = int(path)
             if b < 0:
-                raise Exception("Only non-negative run numbers (i.e., directory names) are allowed in %s." %
-                                target_dir)
+                raise Exception("Only non-negative run numbers (i.e., directory names)\
+                are allowed in %s." % target_dir)
             a.append(b)
     except ValueError:
         raise Exception("The folder %s may only contain folders with integer name." %
@@ -526,6 +529,9 @@ def run_some_benchmark_implementations(hipermark_dir,
             inst_dir = inst['instantiation_directory']
             path_for_outputs = os.path.join(inst_dir, "run_output/", inst['dataset'], runtimeconf['name'])
             mkdir_p(path_for_outputs)
+            # write runtime configuration into JSON file
+            with open(os.path.join(path_for_outputs, RUNTIME_CONFIG_FILENAME), "w") as fp:
+                fp.write(str(runtimeconf['dict']) + "\n")
             first_run_counter = find_run_counter(path_for_outputs)
             for run in range(first_run_counter, number_of_runs + first_run_counter):
                 run_output = os.path.join(inst_dir, "run_output/", inst['dataset'], runtimeconf['name'], str(run))
@@ -552,8 +558,6 @@ def run_some_benchmark_implementations(hipermark_dir,
                                         instantiate_env["HIPERMARK_RESULT"] = resultpath
                                         instantiate_env["HIPERMARK_RUNTIME"] = runtimepath
                                         configure_environment_vars(runtimeconf['dict'], instantiate_env)
-                                        with open(os.path.join(run_output, RUNTIME_CONFIG_FILENAME), "w") as fp:
-                                            fp.write(str(runtimeconf['dict']) + "\n")
                                         timestamp = time.time()
                                         tsstart_file.write(str(timestamp) + "\n")
                                         proc = subprocess.Popen(["make", "-f", inst['implementation_makefile'], "run"],

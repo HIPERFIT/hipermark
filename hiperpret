@@ -4,14 +4,26 @@ import os
 import sys
 import math
 
+# CAPITALIZE CONST NAMES
 result_file = "result.json"
 returncode_file = "returncode.txt"
 runtime_file = "runtime.txt"
 stderr_file = "stderr.log"
 stdout_file = "stdout.log"
 validation_file = "validation.txt"
+STATIC_CONFIGURATION_FILENAME = "static_configuration.json"
+RUN_OUTPUT_PATH = "run_output"
 
 rundir_content = [result_file, returncode_file, runtime_file, stderr_file, stdout_file, validation_file]
+
+def read_json_file(filename):
+    """ returns an array containing the content of the JSON file.
+
+    keyword arguments:
+    filename -- name of json file to interpret
+    """
+    with open(filename, "r") as file:
+        return json.loads(file.read())
 
 
 def get_nth_moment (result_times, n):
@@ -73,8 +85,15 @@ dataset: {2}, run number: {3}".format(self.benchmark_name,
                                       str(self.runnum))
         return a
 
-        
+class Dynamic_configuration:
+    # The dynamic configuration JSON is stored in the folder with
+    # the name of the configuration. (hash(dict)).
+    # A dynamic configuration contains a number of runs.
+    # The name, the dict, and the number of runs should be stored.
+    # The folder structure should be tested: dyn. conf. must exist,
+    # and folder names must be ints.
 
+# A case now also contains a static configuration parameteer
 class Case:
     def __init__(self, benchmark_name, implementation_name, dataset_name, directory):
         self.benchmark_name = benchmark_name
@@ -104,33 +123,75 @@ class Case:
     def __str__(self):
         return "benchmark: {0}, implementation: {1}, dataset: {2}".format(self.benchmark_name,
                                                                        self.implementation_name,
-                                                                       self.dataset_name)
+                                                                       self.dataset_name)    
+ 
+class Static_configuration:
+    def __init__(self, benchmark_name, implementation_name, name, directory):
+        self.benchmark_name = benchmark_name
+        self.implementation_name = implementation_name
+        self.name = name
+        self.directory = directory
+        self.cases = {}
+        sconf_filename = os.path.join(self.directory,
+                                      STATIC_CONFIGURATION_FILENAME)
+        run_output_path = os.path.join(self.directory,
+                                       RUN_OUTPUT_PATH)
+        if not os.path.isfile(sconf_filename):
+            raise Exception("%s does not contain a file describing its \
+            compile-time variables. If no compile-time vars, a file containing \
+            \"{}\" should still be here." % self.directory)
+        if not os.path.isdir(run_output_path):
+            raise Exception("%s does not contain a folder called %s as it \
+            should." % (self.directory, RUN_OUTPUT_PATH))
+        # what if this is a malformed JSON??
+        self.static_configuration = read_json_file()
+        datasets = os.listdir(run_output_path)
+        for dataset in datasets:
+            dataset_path = os.path.join(run_output_path, dataset)
+            if not os.path.isdir(dataset_path):
+                raise Exception("The folder %s may only contain folders with \
+                names of datasets." % run_output_path)
+            self.cases[dataset] = Case(self.benchmark_name,
+                                       self.implementation_name,
+                                       self.name,
+                                       dataset,
+                                       dataset_path)
+        
+        
+    # a name, a dict describing the static conf.
+    # Read the static configuration from JSON
+    # Verfify that name is correct?
+    # Contains a static configuration file which should be read. Also contains a datasets folder.
+    # Also contains a run_output folder.
     
 class Implementation:
     def __init__(self, benchmark_name, name, directory):
         self.benchmark_name = benchmark_name
         self.name = name
         self.directory = directory
-        self.cases = {}
-        print("Name: %s, %s. Directory: %s" % (self.benchmark_name, self.name, self.directory))
-        run_outputdir = os.path.join(self.directory, "run_output")
-        if not os.path.isdir(run_outputdir):
-            raise Exception("The implementation folders must contain a \"run_output\" folder. %s does not." %
-                            self.directory)
-        dircontents = os.listdir(run_outputdir)
-        for dsname in dircontents:
-            datasetdir = os.path.join(run_outputdir, dsname)
-            if not os.path.isdir(datasetdir):
-                raise Exception("The content of %s must be folders with dataset names. But %s is not a folder." %
-                                (run_outputdir, dsname))
-            self.cases[dsname] = Case(self.benchmark_name,
-                                      self.name,
-                                      dsname,
-                                      datasetdir)
+        self.static_configs = {}
+        empty = True
+        # contains only folders with statconf names.
+        dircontents = os.listdir(self.benchmark_name)
+        for static_config in dircontents:
+            empty = False
+            static_config_dir = os.path.join(self.directory, static_config)
+            if not os.path.isdir(static_config_dir):
+                raise Exception("The content of %s must be folders with names \
+                for static configurations (hash values).\
+                But %s is not a folder." % (run_outputdir, dsname))
+            # Here, the keys of the cases will be hash values.
+            self.static_configs[static_config] = \
+            Static_configuration(self.benchmark_name, self.name,
+                                 static_config, static_config_dir)
+        if empty:
+                raise Exception("No folders for static configurations was found\
+                in %s. %s is empty.", (%self.directory, self.directory))
+            
     def __str__(self):
-        return "benchmark: {0}, implementation: {1}.".format(self.benchmark_name,
-                                                               self.name)
-
+        return "benchmark: {0}, implementation: {1}."\
+            .format(self.benchmark_name, self.name)
+    
 class Benchmark:
     def __init__(self, name, directory):
         self.name = name
@@ -140,7 +201,8 @@ class Benchmark:
         for impl in dircontents:
             impldir = os.path.join(self.directory, impl)
             if not os.path.isdir(impldir):
-                raise Exception("The folder containing the %s benchmark must only contain directories. %s is not a directory." %
+                raise Exception("The folder containing the %s benchmark must\
+                only contain directories. %s is not a directory." %
                                 (self.name, impldir))
             implname = os.path.basename(impldir)
             self.implementations[implname] = Implementation(self.name,
@@ -148,23 +210,28 @@ class Benchmark:
                                                              impldir)
             
     def __str__(self):
+        """ This function allows for printing of benchmark objects.
+        """
         a = "benchmark: {0}".format(self.name)
         return a
 
-    
-rootdir = os.getcwd()
-print("rootdir is: %s" % rootdir)
+# Why is rootdir needed? It allows for relative paths upon execution!
+# This program could also demand a benchmark as sys.argv[1] thus only
+# allowing it to analyze one benchmark at a time.
 if len(sys.argv) != 2:
-    raise Exception("Usage %s <directory_containing_hipermark_results>" % sys.argv[0])
+    raise Exception("Usage %s <directory_containing_hipermark_results>" %
+                    sys.argv[0])
 instdir = sys.argv[1]
 if not os.path.isdir(instdir):
     raise Exception("Directory %s could not be found." % sys.argv[1])
 dircontents = os.listdir(instdir)
 b = {}
+rootdir = os.getcwd()
 for bm in dircontents:
     bmdir = os.path.join(rootdir, instdir, bm)
     if not os.path.isdir(bmdir):
-        raise Exception("Only directories may be placed in %s. %s is not a directory." % (sys.argv[1], bm))
+        raise Exception("Only directories may be placed in %s. %s is not a \
+        directory." % (sys.argv[1], bm))
     name = os.path.basename(os.path.normpath(bm))
     b[name] = Benchmark(name, bmdir)
 
@@ -180,13 +247,12 @@ print(imp)
 print(case)
 print(run)
 print(run_time)
-print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, run number: %d is: %d" %
-      (bm.name, imp.name, case.dataset_name, run.runnum, run.runtime))
-print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, run number: %d is: %d" %
-      (run.benchmark_name, run.implementation_name, run.dataset_name, run.runnum, run.runtime))
-#av, stddev = case.get_runtime()
-#print("average of %s")
-#print(stddev)
+print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s, \
+run number: %d is: %d" % (bm.name, imp.name,
+                          case.dataset_name, run.runnum, run.runtime))
+print("Recorded runtime of benchmark: %s, implementation: %s, dataset: %s,\
+ run number: %d is: %d" % (run.benchmark_name, run.implementation_name,
+                           run.dataset_name, run.runnum, run.runtime))
 print(bm)
 print(imp)
 print(case)
