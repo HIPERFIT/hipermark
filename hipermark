@@ -8,6 +8,7 @@ import errno # needed to prevent error in exc.errno == errno.EEXIST
 import math
 import time
 import hashlib
+import multiprocessing
 # The 'six' library could be imported since it is compatible with both P2 and P3.
 
 STAT_CONFIG_TEMPLATE_FILENAME = "static_configuration_template.json" #READ
@@ -49,6 +50,25 @@ def mkdir_p(path):
             pass
         else: raise
 
+def unknown_keyword(keyword):
+    raise Exception("Unknown value keyword '%s' in template." %
+                    keyword)
+
+def dynamic_keywords(keyword):
+    def _list_of_cpu_numbers():
+        return [ str(count+1) for count in range(multiprocessing.cpu_count()) ]
+    keywords = {
+        'ncpus': _list_of_cpu_numbers
+    }
+    return keywords.get(keyword,
+                        lambda: unknown_keyword(keyword))()
+
+def static_keywords(keyword):
+    keywords = {
+    }
+    return keywords.get(keyword,
+                        lambda: unknown_keyword(keyword))()
+
 class Implementation:
     """An implementation is the source code of a solution to a general problem.
     The hierarchy is: problem -> implementation -> benchmark.
@@ -82,10 +102,6 @@ class Implementation:
         self.makefile_file = makefile_file
         self._gather_static_configs()
         self._gather_runtime_configs()
-
-    def _fail_on_keywords(keyword):
-        raise Exception("Unknown value keyword '%s' in template." %
-                        keyword)
 
     def _all_possible_configurations(self, keyword_handler, template):
         """ Takes a dict (representing a JSON) where the values are lists.
@@ -129,7 +145,7 @@ class Implementation:
             return
         self.runtime_config_exists = True
         input_dict = read_json_file(runtime_config_file)
-        runtime_config_list = self._all_possible_configurations(self._fail_on_keywords, input_dict)
+        runtime_config_list = self._all_possible_configurations(dynamic_keywords, input_dict)
         runtime_config_names = self._get_hashed_names(runtime_config_list)
         # The next five lines could probably be replaced by map
         i = int(0)
@@ -149,7 +165,7 @@ class Implementation:
             return
         self.static_config_exists = True
         input_dict = read_json_file(static_config_file)
-        static_config_list = self._all_possible_configurations(self._fail_on_keywords, input_dict)
+        static_config_list = self._all_possible_configurations(static_keywords, input_dict)
         static_config_names = self._get_hashed_names(static_config_list)
         # The next five lines could probably be replaced by map
         i = int(0)
