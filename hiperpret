@@ -5,18 +5,22 @@ import sys
 import math
 import json
 
-# CAPITALIZE CONST NAMES
+# These files are read, not written.
 RESULT_FILENAME = "result.json"
-RETURNCODE_FILENAME = "returncode.txt"
+RUNDATA_FILENAME = "rundata.json"
 RUNTIME_FILENAME = "runtime.txt"
 STDERR_FILENAME = "stderr.log"
 STDOUT_FILENAME = "stdout.log"
-TIMESTAMP_END_FILENAME = "tsendrun.txt"
-TIMESTAMP_START_FILENAME = "tsstartrun.txt"
-VALIDATION_FILENAME = "validation.txt"
 STATIC_CONFIGURATION_FILENAME = "static_configuration.json"
 DYNAMIC_CONFIGURATION_FILENAME = "dynamic_configuration.json"
 RUN_OUTPUT_PATH = "run_output"
+
+# dict entries in rundata.json
+TIMESTAMP_START = "timestamp_start"
+TIMESTAMP_END = "timestamp_end"
+RETURN_CODE = "return_code"
+VALIDATION = "validation"
+RUNTIME = "runtime"
 
 def read_json_file(filename):
     """ returns an array containing the content of the JSON file.
@@ -36,12 +40,8 @@ def get_nth_moment (result_times, n):
     result_times -- list of result times (floats)
     n -- integer describing that statistical moment of result_times which is returned
     """
-    # rewrite to use map.
-    suml = 0
-    N = len(result_times)
-    for i in range(N):
-        suml += result_times[i]**n
-    return (suml/float(N))
+    powers = [x**n for x in result_times]
+    return sum(powers)/float(len(powers))
 
 def get_average_and_stddev (result_times):
     """ Returns average and stddev for a list.
@@ -68,9 +68,8 @@ class Run:
         self.dynamic_configuration = dynamic_configuration
         self.name = runnum
         self.directory = directory
-        rundir_content = [RESULT_FILENAME, RETURNCODE_FILENAME, RUNTIME_FILENAME,\
-                          STDERR_FILENAME, STDOUT_FILENAME, TIMESTAMP_END_FILENAME,\
-                          TIMESTAMP_START_FILENAME, VALIDATION_FILENAME]
+        rundir_content = [RESULT_FILENAME, RUNTIME_FILENAME,\
+                          STDERR_FILENAME, STDOUT_FILENAME, RUNDATA_FILENAME]
         dircontents = os.listdir(self.directory)
         N = len(rundir_content)
         for i in range(N):
@@ -78,32 +77,27 @@ class Run:
                 raise Exception("The folder %s does not contain the file %s." %
                                 (self.directory, rundir_content[i]))
         with open(os.path.join(self.directory,
-                               RETURNCODE_FILENAME), "r") as retcode_fp:
+                               RUNTIME_FILENAME), "r") as runtime_fp:
             with open(os.path.join(self.directory,
-                                   RUNTIME_FILENAME), "r") as runtime_fp:
+                                   STDERR_FILENAME), "r") as stderr_fp:
                 with open(os.path.join(self.directory,
-                                       STDERR_FILENAME), "r") as stderr_fp:
-                    with open(os.path.join(self.directory,
-                                           STDOUT_FILENAME), "r") as stdout_fp:
-                        with open(os.path.join(self.directory,
-                                               TIMESTAMP_END_FILENAME), "r") as ts_end_fp:
-                            with open(os.path.join(self.directory,
-                                                   TIMESTAMP_START_FILENAME), "r") as ts_start_fp:
-                                with open(os.path.join(self.directory,
-                                                       VALIDATION_FILENAME), "r") as validation_fp:                        
-                                    try:
-                                        self.retcode = int(retcode_fp.read())
-                                        self.runtime = int(runtime_fp.read())
-                                        self.stderr = str(stderr_fp.read())
-                                        self.stdout = str(stdout_fp.read())
-                                        self.ts_end = float(ts_end_fp.read())
-                                        self.ts_start = float(ts_start_fp.read())
-                                        self.validation = int(validation_fp.read())
-                                    except ValueError as e:
-                                        # How are the arguments of the exception presented?
-                                        raise Exception("The content of one of\
-                                        the result files in %s was malformed:\
-                                        %s." % (self.directory, e.args()))
+                                       STDOUT_FILENAME), "r") as stdout_fp:
+                    try:
+                        rd_dict_path = os.path.join(self.directory,
+                                                    RUNDATA_FILENAME)
+                        rd_dict = read_json_file(rd_dict_path)
+                        self.retcode = int(rd_dict[RETURN_CODE])
+                        self.ts_start = float(rd_dict[TIMESTAMP_START])
+                        self.ts_end = float(rd_dict[TIMESTAMP_END])
+                        self.validation = int(rd_dict[VALIDATION])
+                        self.runtime = int(runtime_fp.read())
+                        self.stderr = str(stderr_fp.read())
+                        self.stdout = str(stdout_fp.read())
+                    except ValueError as e:
+                        # How are the arguments of the exception presented?
+                        raise Exception("The content of one of\
+                        the result files in %s was malformed:\
+                        %s." % (self.directory, e.args()))
 
     def __str__(self):
         return "benchmark: {0}, \
@@ -348,11 +342,11 @@ lvc = b['LocVolCalib']
 print(lvc)
 compn = lvc.implementations['cpp_openmp_naive']
 print(compn)
-sc0 = compn.static_configs['11b90a2e2f08']
+sc0 = compn.static_configs['b335a81d722b']
 print(sc0)
 medium = sc0.cases['medium']
 print(medium)
-dc0 = medium.dynamic_configurations['5171205a378a']
+dc0 = medium.dynamic_configurations['0ea96b5a5a40']
 print(dc0)
 run0 = dc0.runs[0]
 print(run0)
