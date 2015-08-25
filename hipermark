@@ -162,7 +162,7 @@ class Implementation:
         of all values therein that are lists."""
         static_config_file = os.path.join(self.directory, STAT_CONFIG_TEMPLATE_FILENAME)
         if not os.path.isfile(static_config_file):
-            self.static_config_exists = False #Unused! Should be used in desc octuple/septuple.
+            self.static_config_exists = False 
             self.static_config_list = [{'name': "default", 'dict': {}}]
             return
         self.static_config_exists = True

@@ -40,7 +40,7 @@ def get_nth_moment (result_times, n):
     result_times -- list of result times (floats)
     n -- integer describing that statistical moment of result_times which is returned
     """
-    powers = [x**n for x in result_times]
+    powers = map(lambda x: x**n, result_times)
     return sum(powers)/float(len(powers))
 
 def get_average_and_stddev (result_times):
@@ -108,9 +108,9 @@ class Run:
         run number: {5}"\
         .format(self.benchmark.name,
                 self.implementation.name,
-                str(self.static_configuration.dict),
+                str(self.static_configuration.configuration),
                 self.case.name,
-                str(self.dynamic_configuration.dict),
+                str(self.dynamic_configuration.configuration),
                 str(self.name))
 
 class Dynamic_configuration:
@@ -130,7 +130,7 @@ class Dynamic_configuration:
             runtime variables. If no runtime vars, a file containing \
             \"{}\" should still be here." % self.directory)
         try:
-            self.dict = read_json_file(dconf_filename)
+            self.configuration = read_json_file(dconf_filename)
         except ValueError as e:
             print("Error reading JSON")
             print(e.args)
@@ -166,9 +166,9 @@ class Dynamic_configuration:
         dynamic configuration: {4}"\
         .format(self.benchmark.name,
                 self.implementation.name,
-                str(self.static_configuration.dict),
+                str(self.static_configuration.configuration),
                 self.case.name,
-                str(self.dict))
+                str(self.configuration))
             
             
 
@@ -212,7 +212,7 @@ class Case:
         dataset: {3}"\
         .format(self.benchmark.name,
                 self.implementation.name,
-                str(self.static_configuration.dict),
+                str(self.static_configuration.configuration),
                 self.name)
     
 class Static_configuration:
@@ -226,6 +226,7 @@ class Static_configuration:
                                       STATIC_CONFIGURATION_FILENAME)
         run_output_path = os.path.join(self.directory,
                                        RUN_OUTPUT_PATH)
+        self.run_output_path = run_output_path
         if not os.path.isfile(sconf_filename):
             raise Exception("%s does not contain a file describing its \
             compile-time variables. If no compile-time vars, a file containing \
@@ -235,7 +236,7 @@ class Static_configuration:
             should." % (self.directory, RUN_OUTPUT_PATH))
         # what if this is a malformed JSON??
         try:
-            self.dict = read_json_file(sconf_filename)
+            self.configuration = read_json_file(sconf_filename)
         except ValueError as e:
             print("\n" + str(e.args) + "\n")
             raise Exception("Error reading JSON file: %s" % sconf_filename)
@@ -262,7 +263,7 @@ class Static_configuration:
         static configuration: {2}"\
         .format(self.benchmark.name,
                 self.implementation.name,
-                str(self.dict))
+                str(self.configuration))
     
 class Implementation:
     def __init__(self, benchmark, name, directory):
@@ -337,14 +338,83 @@ for bm in dircontents:
     name = os.path.basename(os.path.normpath(bm))
     b[name] = Benchmark(name, bmdir)
 
+
+def get_y_vs_x(y_name, x_name):
+    """ Given a certain benchmark, this should allow the user to select one free 
+    variable and one dependent variable. """
+
+def get_static_var_names(implementation):
+    """Returns a list of all static (compile time) configuration variable names.
+    Returns the empty list if there are no
+    """
+    if implementation.static_configs == {}:
+        return []
+    first = True
+    for sconf_name in implementation.static_configs:
+        static_conf = implementation.static_configs[sconf_name]
+        if first:
+            static_var_names= []
+            for var in static_conf.configuration:
+                static_var_names.append(var)
+                # This should also record and return the type!!
+                first = False
+            else:
+                # if not the first static configuration in the list, we demand
+                # that the dictionary contain the same keys as the first.
+                sconf_keys = list(static_conf.configuration.keys())
+                if not set(static_var_names) == set(sconf_keys):
+                    raise Exception("Static configuration keys differ for \
+                    implementation %s" % implementation.name)
+    # convert from unicode to string before returning            
+    return map(lambda name: str(name), static_var_names)
+
+def get_dataset_names(implementation):
+    """ Returns a list of all dataset names used in a given implementation.
+    Also checks if the set of datasets is equivalent for all static 
+    configurations.
+    """
+    first = True
+    for sconf_name in implementation.static_configs:
+        if first:
+            static_config = implementation.static_configs[sconf_name]
+            # looping (mapping) over all values of the cases dictionary.
+            dataset_names = map(lambda case: case.name, static_config.cases.itervalues())
+            first = False
+        else:
+            static_config = implementation.static_configs[sconf_name]
+            dataset_names_new = map(lambda case: case.name, static_config.cases.itervalues())
+            if not set(dataset_names) == set(dataset_names_new):
+                raise Exception("The static configuration of implementation \
+                %s do not agree of dataset names. Both %s, and %s were observed\
+                " % (implementation.name, dircontents, dircontents_new))
+    # convert from unicode to string before returning            
+    return map(lambda name: str(name), dataset_names)
+
+#def get_runtime_var_names(implementation):
+
+def get_var_names(implementation):
+    """Returns the variable names that a specific implementation contains.
+    The return type is a dict with list of strings as values.
+    """
+    variables = {}
+    variables["static_configurations"] = get_static_var_names(implementation)
+    variables["datasets"] = get_dataset_names(implementation)
+    #variables["runtime_configurations"] = get_runtime_var_names(implementation)
+    return variables
+
 # Testing occurs below this line. Specific dataset is needed for this to work.    
-lvc = b['LocVolCalib']
+lvc = b['OptionPricing']
 print(lvc)
-compn = lvc.implementations['cpp_openmp_naive']
+compn = lvc.implementations['cpp_openmp']
+var_names = get_var_names(compn)
+print("The static var names are:")
+print(var_names["static_configurations"])
+print("The dataset names are:")
+print(var_names["datasets"])
 print(compn)
 sc0 = compn.static_configs['b335a81d722b']
 print(sc0)
-medium = sc0.cases['medium']
+medium = sc0.cases['small']
 print(medium)
 dc0 = medium.dynamic_configurations['0ea96b5a5a40']
 print(dc0)
