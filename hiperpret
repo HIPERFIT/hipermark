@@ -4,6 +4,8 @@ import os
 import sys
 import math
 import json
+import matplotlib.pyplot as plt
+import numpy as np
 
 # These files are read, not written.
 RESULT_FILENAME = "result.json"
@@ -83,6 +85,7 @@ class Run:
                 with open(os.path.join(self.directory,
                                        STDOUT_FILENAME), "r") as stdout_fp:
                     try:
+                        # Also catch the KeyError here!!
                         rd_dict_path = os.path.join(self.directory,
                                                     RUNDATA_FILENAME)
                         rd_dict = read_json_file(rd_dict_path)
@@ -156,6 +159,7 @@ class Dynamic_configuration:
             except ValueError:
                 raise Exception("The folder %s may only contain folders with\
                 integer name." % self.directory)
+        self.number_of_runs = max(list(self.runs.keys())) - 1
 
 
     def __str__(self):
@@ -420,8 +424,7 @@ for bm in dircontents:
     b[name] = Benchmark(name, bmdir)
 
 
-# Given a benchmark, implementation,
-def runtime_vs_numthreads(instdir, benchmark_name, implementation_name, dataset_name, real_type):
+def runtime_vs_real_types(instdir, benchmark_name, implementation_name, dataset_name, num_cores):
     def get_benchmark_object(benchmark_name, instdir):
         if not os.path.isdir(instdir):
             raise Exception("Directory %s could not be found." % sys.argv[1])
@@ -434,7 +437,6 @@ def runtime_vs_numthreads(instdir, benchmark_name, implementation_name, dataset_
         if non_dirs:
             raise Exception("Only directories may be be placed in %s." % sys.argv[1])
         bmdirs = map(lambda bm: os.path.join(rootdir, instdir, bm), dircontents)
-        # the b var should be a 
         b_vals = map(lambda name, bmdir: Benchmark(name, bmdir), dircontents, bmdirs)
         b = dict(zip(dircontents, b_vals))
         try:
@@ -451,20 +453,88 @@ def runtime_vs_numthreads(instdir, benchmark_name, implementation_name, dataset_
             raise Exception("%s was not found among the implementations of benchmark\
             %s" %(implementation_name))
         return implementation
-    def get_nt_vals(implementation):
+    
+    def get_real_types(implementation):
+        """Finds all the real types that have been used in this implementation
+        """
         try:
-            nt_vals = map(lambda sconf: sconf.configuration['NUM_THREADS'],\
+            real_types = map(lambda sconf: sconf.configuration['REAL_TYPE'],\
                           implementation.static_configs.itervalues())
         except KeyError:
-            raise Exception("NUM_THREADS is not a static configuration \
+            raise Exception("REAL_TYPE is not a static configuration \
             variable of %s" % implementation.name)
-        return nt_vals
+        return map(lambda name: str(name), real_types)
+
+    def get_case_objects(implementation, dataset_name):
+        """Returns all cases that conform to parent function arguments.
+        """
+        sconfs = implementation.static_configs.itervalues()
+        cases = map(lambda sconf: sconf.cases[dataset_name], sconfs)
+        return cases
+
+    def get_dconf_objects(cases, num_cores):
+        """Returns the dynamic configuration objects that conform to parent
+        functions arguments.
+        """
+        def extract_dconfs(case):
+            dconfs = filter(lambda dconf: num_cores == 
+                           int(dconf.configuration['NUM_THREADS']),
+                           case.dynamic_configurations.itervalues())
+            if len(dconfs) != 1:
+                raise Exception("Non-unique dynamic configuration extracted",
+                                map(lambda dconf: dconf.name, dconfs))
+            return dconfs[0]
+
+        return map(extract_dconfs, cases)
+
+    def get_statistic(dconf):
+        """Given one dynamic configuration, this function returns the average,
+        standard deviation, and the uncertainty of the av."""
+        N = dconf.number_of_runs
+        runtimes = map(lambda run: run.runtime, dconf.runs.itervalues())
+        av, std_dev = get_average_and_stddev(runtimes)
+        uncertainty = std_dev/math.sqrt(N)
+        return av, std_dev, uncertainty
+
+    def get_statistics(dconfs):
+        """ Returns a list of tuples where tuple[0] = av, tuple[1] = std_dev,
+        tuple[2] = uncertainty on average."""
+        return map(get_statistic, dconfs)
             
     benchmark = get_benchmark_object(benchmark_name, instdir)
     implementation = get_implementation_object(benchmark, implementation_name)
-    nt_vals = get_nt_vals(implementation)
-    return nt_vals
-# It should be easy to generalize the above function to any static variable.
+    real_types = get_real_types(implementation)
+    cases = get_case_objects(implementation, dataset_name)
+    dynamic_configs = get_dconf_objects(cases, num_cores)
+    statistics = get_statistics(dynamic_configs)
+    return statistics
+
+def visualize(statistics):
+    N = len(statistics)
+    avs = tuple(map(lambda stat: stat[0], statistics))
+    uncs = tuple(map(lambda stat: stat[2], statistics))
+    width = 0.35
+    ind = np.arange(N)
+    
+    fig, ax = plt.subplots()
+    print("AVS: ", avs)
+    print("UNCS: ", uncs)
+    rects1 = ax.bar(ind, avs, width, color='r', yerr=uncs)
+    ax.set_ylabel('Runtime [ms]')
+    ax.set_title('Runtime of OptionPricing, cpp_openmp, small dataset, 2 threads')
+    ax.set_xticks(ind + width/2)
+    ax.set_xticklabels( ('double', 'float') )
+
+    
+    def autolabel(rects):
+        # attach some text labels
+        for rect in rects:
+            height = rect.get_height()
+            ax.text(rect.get_x()+rect.get_width()/2., 1.05*height, '%d'%int(height),
+                    ha='center', va='bottom')
+
+    autolabel(rects1)
+    plt.show()
 
 # Testing occurs below this line. Specific dataset is needed for this to work.
 print("These benchmarks were found:")
@@ -481,15 +551,7 @@ print(var_names["datasets"])
 print("The runtime variable's names are:")
 print(var_names["runtime_configurations"])
 print("The different values of NUM_THREADS are:")
-nt_vals = runtime_vs_numthreads(sys.argv[1], 'OptionPricing', 'cpp_openmp', 'small', 'double')
-print(nt_vals)
-print(compn)
-sc0 = compn.static_configs['b335a81d722b']
-print(sc0)
-medium = sc0.cases['small']
-print(medium)
-dc0 = medium.dynamic_configurations['0ea96b5a5a40']
-print(dc0)
-run0 = dc0.runs[0]
-print(run0)
-print("Retcode: {0}\n runtime: {1}\n stderr: {2}\n stdout: {3}\n ts end: {4}\n ts start: {5}\n validation: {6}".format(run0.retcode, run0.runtime, run0.stderr, run0.stdout, run0.ts_end, run0.ts_start, run0.validation))
+statistics = runtime_vs_real_types(sys.argv[1], 'OptionPricing', 'cpp_openmp', 'small', 2)
+print("FUNCTION RETURNS:")
+print(statistics)
+visualize(statistics)
