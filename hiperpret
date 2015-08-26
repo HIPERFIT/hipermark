@@ -318,25 +318,7 @@ class Benchmark:
         a = "benchmark: {0}".format(self.name)
         return a
 
-# Why is rootdir needed? It allows for relative paths upon execution!
-# This program could also demand a benchmark as sys.argv[1] thus only
-# allowing it to analyze one benchmark at a time.
-if len(sys.argv) != 2:
-    raise Exception("Usage %s <directory_containing_hipermark_results>" %
-                    sys.argv[0])
-instdir = sys.argv[1]
-if not os.path.isdir(instdir):
-    raise Exception("Directory %s could not be found." % sys.argv[1])
-dircontents = os.listdir(instdir)
-b = {}
-rootdir = os.getcwd()
-for bm in dircontents:
-    bmdir = os.path.join(rootdir, instdir, bm)
-    if not os.path.isdir(bmdir):
-        raise Exception("Only directories may be placed in %s. %s is not a \
-        directory." % (sys.argv[1], bm))
-    name = os.path.basename(os.path.normpath(bm))
-    b[name] = Benchmark(name, bmdir)
+
 
 
 def get_y_vs_x(y_name, x_name):
@@ -416,7 +398,78 @@ def get_var_names(implementation):
     variables["runtime_configurations"] = get_runtime_var_names(implementation)
     return variables
 
-# Testing occurs below this line. Specific dataset is needed for this to work.    
+
+# Why is rootdir needed? It allows for relative paths upon execution!
+# This program could also demand a benchmark as sys.argv[1] thus only
+# allowing it to analyze one benchmark at a time.
+if len(sys.argv) != 2:
+    raise Exception("Usage %s <directory_containing_hipermark_results>" %
+                    sys.argv[0])
+instdir = sys.argv[1]
+if not os.path.isdir(instdir):
+    raise Exception("Directory %s could not be found." % sys.argv[1])
+dircontents = os.listdir(instdir)
+b = {}
+rootdir = os.getcwd()
+for bm in dircontents:
+    bmdir = os.path.join(rootdir, instdir, bm)
+    if not os.path.isdir(bmdir):
+        raise Exception("Only directories may be placed in %s. %s is not a \
+        directory." % (sys.argv[1], bm))
+    name = os.path.basename(os.path.normpath(bm))
+    b[name] = Benchmark(name, bmdir)
+
+
+# Given a benchmark, implementation,
+def runtime_vs_numthreads(instdir, benchmark_name, implementation_name, dataset_name, real_type):
+    def get_benchmark_object(benchmark_name, instdir):
+        if not os.path.isdir(instdir):
+            raise Exception("Directory %s could not be found." % sys.argv[1])
+        dircontents = os.listdir(instdir)
+        b = {}
+        rootdir = os.getcwd()
+        non_dirs = filter(lambda path:
+                          not os.path.isdir(os.path.join(rootdir, instdir, path)),
+                          dircontents)
+        if non_dirs:
+            raise Exception("Only directories may be be placed in %s." % sys.argv[1])
+        bmdirs = map(lambda bm: os.path.join(rootdir, instdir, bm), dircontents)
+        # the b var should be a 
+        b_vals = map(lambda name, bmdir: Benchmark(name, bmdir), dircontents, bmdirs)
+        b = dict(zip(dircontents, b_vals))
+        try:
+            benchmark = b[benchmark_name]
+        except KeyError:
+            raise Exception("%s was not found among the benchmark objects." %
+                            benchmark_name)
+        return benchmark
+
+    def get_implementation_object(benchmark, implementation_name):
+        try:
+            implementation = benchmark.implementations[implementation_name]
+        except KeyError:
+            raise Exception("%s was not found among the implementations of benchmark\
+            %s" %(implementation_name))
+        return implementation
+    def get_nt_vals(implementation):
+        try:
+            nt_vals = map(lambda sconf: sconf.configuration['NUM_THREADS'],\
+                          implementation.static_configs.itervalues())
+        except KeyError:
+            raise Exception("NUM_THREADS is not a static configuration \
+            variable of %s" % implementation.name)
+        return nt_vals
+            
+    benchmark = get_benchmark_object(benchmark_name, instdir)
+    implementation = get_implementation_object(benchmark, implementation_name)
+    nt_vals = get_nt_vals(implementation)
+    return nt_vals
+# It should be easy to generalize the above function to any static variable.
+
+# Testing occurs below this line. Specific dataset is needed for this to work.
+print("These benchmarks were found:")
+for benchmark in b.itervalues():
+    print(benchmark.name)
 lvc = b['OptionPricing']
 print(lvc)
 compn = lvc.implementations['cpp_openmp']
@@ -427,6 +480,9 @@ print("The dataset names are:")
 print(var_names["datasets"])
 print("The runtime variable's names are:")
 print(var_names["runtime_configurations"])
+print("The different values of NUM_THREADS are:")
+nt_vals = runtime_vs_numthreads(sys.argv[1], 'OptionPricing', 'cpp_openmp', 'small', 'double')
+print(nt_vals)
 print(compn)
 sc0 = compn.static_configs['b335a81d722b']
 print(sc0)
