@@ -173,41 +173,7 @@ class Implementation:
                                        {'name': static_name,\
                                         'dict': static_config},\
                                        static_configs, static_names)
-        
-    def instantiate_data(self, inst_dir, input_data, dataset_name):
-        """Run the 'make data' script which prepares the input data of the case.
 
-        keyword arguments:
-        inst_dir -- /instantiations/"<benchmark>/<implementation>" (target directory)
-        input_data -- path of input file. /benchmarks/<benchmark>/datasets/<dataset>
-        dataset_name -- name of dataset, specified by dir name of dataset in source files.
-        """
-        if not os.path.isdir(inst_dir):
-            mkdir_p(inst_dir)
-        
-        # HIPERMARK_LIB_DIR: path of main library. /lib/
-        # HIPERMARK_INPUT: path of input file. /benchmarks/<benchmark>/datasets/<dataset>/input.json
-        # HIPERMARK_INPUT_NAME: Name of the folder in which the dataset was contained. This
-        # prevents the overwriting of other data files, so 'make data' must use this 
-        # variable.
-        instantiate_env = os.environ.copy()
-        instantiate_env["HIPERMARK_LIB_DIR"] = self.hipermark_lib_dir
-        instantiate_env["HIPERMARK_INPUT"] = input_data
-        instantiate_env["HIPERMARK_INPUT_NAME"] = dataset_name
-
-        proc = subprocess.Popen(["make", "-f", self.makefile_file, "data"],
-                                env=instantiate_env,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE,
-                                stdin=subprocess.PIPE,
-                                close_fds=True,
-                                cwd=inst_dir)
-
-        # Read data from stdout and stderr, until end-of-file is reached. Also waits for process to terminate.
-        (stdoutdata, stderrdata) = proc.communicate(input=None)
-        return (proc.returncode, stdoutdata, stderrdata)
-
- 
     def instantiate(self, inst_dir, static_conf, platform_file):
         """Runs 'make' which creates a run file to run the
         implementation and also runs whatever compilers may be necessary.
@@ -439,7 +405,176 @@ def configure_environment_vars(env_dict, instantiate_env):
     """
     for env_name in env_dict:
         instantiate_env["HIPERMARK_CONFIG_" + str(env_name)] = env_dict[env_name]
-    
+
+def run_case(results, inst, dataset, runtimeconf):
+    inst_dir = inst['instantiation_directory']
+    path_for_outputs = os.path.join(inst_dir, "run_output/", dataset, runtimeconf['name'])
+    benchmark = inst['benchmark']
+    dataset_file = benchmark.datasets[dataset]['input_file']
+    expected_output_file = benchmark.datasets[dataset]['expected_output_file']
+
+    mkdir_p(path_for_outputs)
+    # write runtime configuration into JSON file
+    with open(os.path.join(path_for_outputs, RUNTIME_CONFIG_FILENAME), "w") as fp:
+        fp.write(json.dumps(runtimeconf['dict']))
+    first_run_counter = find_run_counter(path_for_outputs)
+    for run in range(first_run_counter, number_of_runs + first_run_counter):
+        run_output = os.path.join(inst_dir, "run_output/", dataset, runtimeconf['name'], str(run))
+        mkdir_p(run_output)
+        print("\nRunning %s" % run_output)
+        stdoutpath = os.path.join(run_output, STDOUT_FILENAME)
+        stderrpath = os.path.join(run_output, STDERR_FILENAME)
+        resultpath = os.path.join(run_output, RESULT_FILENAME)
+        runtimepath = os.path.join(run_output, RUNTIME_FILENAME)                
+        #returncodepath = os.path.join(run_output, RETURNCODE_FILENAME)
+        #validationpath = os.path.join(run_output, VALIDATION_FILENAME)
+        #timestampstartpath = os.path.join(run_output, TIMESTAMPSTART_FILENAME)
+        #timestampendpath = os.path.join(run_output, TIMESTAMPEND_FILENAME)
+        with open(stdoutpath, "w") as stdout:
+            with open(stderrpath, "w") as stderr:
+                rundata_dict = {}
+                print("Output can be found in %s and %s" % (stdoutpath, stderrpath))
+                try:
+                    instantiate_env = os.environ.copy()
+                    #HIPERMARK_RESULT/RUNTIME: path for impl. to store result/runtime
+                    instantiate_env["HIPERMARK_INPUT_FILE"] = dataset_file
+                    instantiate_env["HIPERMARK_RESULT"] = resultpath
+                    instantiate_env["HIPERMARK_RUNTIME"] = runtimepath
+                    configure_environment_vars(runtimeconf['dict'],
+                                               instantiate_env)
+                    timestamp = time.time()
+                    rundata_dict[TIMESTAMP_START] = str(timestamp)
+                    proc = subprocess.Popen(["make", "-f", inst['implementation_makefile'], "run"],
+                                            env=instantiate_env,
+                                            stdout=stdout,
+                                            stderr=stderr,
+                                            stdin=subprocess.PIPE,
+                                            close_fds=True,
+                                            cwd=inst_dir) #run a case
+                    proc.stdin.close() # Make sure stdin EOFs.
+                    proc.wait()
+                    timestamp = time.time()
+                    rundata_dict[TIMESTAMP_END] = str(timestamp)
+                    rundata_dict[RETURN_CODE] = str(proc.returncode)
+                except:
+                    note_result(results,
+                                benchmark.name,
+                                inst['implementation'].name,
+                                inst['stat_config_name'],
+                                inst['stat_config_dict'],
+                                runtimeconf['name'],
+                                runtimeconf['dict'],
+                                dataset,
+                                run,
+                                "could not run")
+                    print("Spoiler: failed")
+                    continue
+        if proc.returncode != 0:
+            note_result(results,
+                        benchmark.name,
+                        inst['implementation'].name,
+                        inst['stat_config_name'],
+                        inst['stat_config_dict'],
+                        runtimeconf['name'],
+                        runtimeconf['dict'],
+                        dataset,
+                        run,
+                        "non-zero exit code")
+            print("Spoiler: failed")
+            continue
+        
+        try:
+            runtime = read_runtime(run_output)
+            rundata_dict[RUNTIME] = str(runtime)
+        except IOError:
+            note_result(results,
+                        benchmark.name,
+                        inst['implementation'].name,
+                        inst['stat_config_name'],
+                        inst['stat_config_dict'],
+                        runtimeconf['name'],
+                        runtimeconf['dict'],
+                        dataset,
+                        run,
+                        "no runtime measurement")
+            rundata_dict[RUNTIME] = "no runtime measurement"
+            continue
+        except ValueError:
+            note_result(results,
+                    benchmark.name,
+                        inst['implementation'].name,
+                        inst['stat_config_name'],
+                        inst['stat_config_dict'],
+                        runtimeconf['name'],
+                        runtimeconf['dict'],
+                        dataset,
+                        run,
+                        "non-integer runtime measurement")
+            rundata_dict[RUNTIME] = "non-integer runtime measurement"
+            continue
+        
+        try:
+            resultfile = os.path.join(run_output, RESULT_FILENAME)
+            if benchmark.external_validation:
+                evstdoutpath = os.path.join(run_output, EXT_VALIDATION_STDOUT_FILENAME)
+                evstderrpath = os.path.join(run_output, EXT_VALIDATION_STDERR_FILENAME)
+                with open(evstdoutpath, 'w') as evstdout:
+                    with open(evstdoutpath, 'w') as evstderr:
+                        print("Launching external validation")
+                        proc = subprocess.Popen([benchmark.external_validation_file, resultfile, expected_output_file],
+                                                stdout=evstdout,
+                                                stderr=evstderr,
+                                                stdin=subprocess.PIPE,
+                                                close_fds=True,
+                                                cwd=inst_dir)
+                        #return code 0 of above means succesfull val.
+                proc.stdin.close() # Make sure stdin EOFs.
+                proc.wait()
+                match = 1 ^ proc.returncode
+            else:
+                result = read_json_file(resultfile)
+                expected = read_json_file(expected_output_file)
+                match = compare_json(result, expected)
+                # write to validation
+                rundata_dict[VALIDATION] = str(int(match))
+            if match:
+                note_result(results,
+                            benchmark.name,
+                            inst['implementation'].name,
+                            inst['stat_config_name'],
+                            inst['stat_config_dict'],
+                            runtimeconf['name'],
+                            runtimeconf['dict'],
+                            dataset,
+                            run,
+                            runtime)
+            else:
+                note_result(results,
+                            benchmark.name,
+                            inst['implementation'].name,
+                            inst['stat_config_name'],
+                            inst['stat_config_dict'],
+                            runtimeconf['name'],
+                            runtimeconf['dict'],
+                            dataset,
+                            run,
+                            "result did not match expected result")
+        except (IOError, ValueError):
+            note_result(results,
+                        benchmark.name,
+                        inst['implementation'].name,
+                        inst['stat_config_name'],
+                        inst['stat_config_dict'],
+                        runtimeconf['name'],
+                        runtimeconf['dict'],
+                        dataset,
+                        run,
+                        "cannot read result")
+            rundata_dict[VALIDATION] = "cannot read result\n"
+        f = open(os.path.join(run_output, RUNDATA_FILENAME), "w")
+        f.write(json.dumps(rundata_dict))
+        f.close()
+
 def run_some_benchmark_implementations(hipermark_dir,
                                        workdir,
                                        benchmarkdir,
@@ -466,46 +601,11 @@ def run_some_benchmark_implementations(hipermark_dir,
     b = Benchmark(hipermark_dir,
                   os.path.basename(os.path.normpath(benchmarkdir)),
                   benchmarkdir)
-    data_insts = []  # all succesfull data compilations.
-    failed_data_insts = [] # all failed data compilations
     insts = []  # all succesfull implementation compilations.
     failed_insts = [] # all failed implementation compilations
     results = {} # dict in Python. Like an associative array. key: (bench, impl, dataset)
     # value: list of runtimes. Manipulated through note_result function.
     # Things are overwritten here.
-    # Running all "make data" targets
-    for impl in b.implementations:
-        if not run_implementation_fn(impl):
-            continue
-        for sconf in impl.static_config_list:
-            inst_dir = os.path.join(os.getcwd(), workdir, "%s/%s/%s" % (b.name, impl.name, sconf['name']))
-            for dataset in b.datasets:
-                if not use_dataset_fn(dataset):
-                    continue
-                print("Instantiating dataset \"%s\" in %s" % (dataset, inst_dir))
-                # SHOULD impl.instantiate_data have access to the env. vars of impl.statconfiglist??
-                (retcode, stdout, stderr) = impl.instantiate_data(
-                    inst_dir, b.datasets[dataset]['input_file'], dataset)
-                if retcode != 0:
-                    failed_data_insts.append({ 'benchmark' : b,
-                                               'implementation' : impl,
-                                               'stat_config_name': sconf['name'],
-                                               'stat_config_dict': sconf['dict'],
-                                               'dataset' : dataset,
-                                               'instantiation_directory' : inst_dir,
-                                               'retcode' : retcode,
-                                               'stdout' : stdout,
-                                               'stderr' : stderr})
-                    print("Spoiler: failed")
-                else:
-                    data_insts.append({ 'benchmark' : b,
-                                        'implementation' : impl,
-                                        'stat_config_name': sconf['name'],
-                                        'stat_config_dict': sconf['dict'],
-                                        'dataset' : dataset,
-                                        'implementation_makefile' : impl.makefile_file,
-                                        'instantiation_directory' : inst_dir,
-                                        'expected_output_file' : b.datasets[dataset]['expected_output_file']})
 
     # Running all Makefiles
     for impl in b.implementations:
@@ -532,177 +632,18 @@ def run_some_benchmark_implementations(hipermark_dir,
                                'stat_config_name': sconf['name'],
                                'stat_config_dict': sconf['dict'],
                                'instantiation_directory' : inst_dir,
-                               'expected_output_file' : b.datasets[dataset]['expected_output_file']})
+                               'datasets' : b.datasets,
+                               'implementation_makefile' : impl.makefile_file})
 
     # Here, all data instantiations are looped over and the makefile run
     # is executed for each dataset*statconfig.
-    for inst in data_insts:
-        for runtimeconf in inst['implementation'].runtime_config_list:
-            inst_dir = inst['instantiation_directory']
-            path_for_outputs = os.path.join(inst_dir, "run_output/", inst['dataset'], runtimeconf['name'])
-            mkdir_p(path_for_outputs)
-            # write runtime configuration into JSON file
-            with open(os.path.join(path_for_outputs, RUNTIME_CONFIG_FILENAME), "w") as fp:
-                fp.write(json.dumps(runtimeconf['dict']))
-            first_run_counter = find_run_counter(path_for_outputs)
-            for run in range(first_run_counter, number_of_runs + first_run_counter):
-                run_output = os.path.join(inst_dir, "run_output/", inst['dataset'], runtimeconf['name'], str(run))
-                mkdir_p(run_output)
-                print("\nRunning %s" % run_output)
-                stdoutpath = os.path.join(run_output, STDOUT_FILENAME)
-                stderrpath = os.path.join(run_output, STDERR_FILENAME)
-                resultpath = os.path.join(run_output, RESULT_FILENAME)
-                runtimepath = os.path.join(run_output, RUNTIME_FILENAME)                
-                #returncodepath = os.path.join(run_output, RETURNCODE_FILENAME)
-                #validationpath = os.path.join(run_output, VALIDATION_FILENAME)
-                #timestampstartpath = os.path.join(run_output, TIMESTAMPSTART_FILENAME)
-                #timestampendpath = os.path.join(run_output, TIMESTAMPEND_FILENAME)
-                with open(stdoutpath, "w") as stdout:
-                    with open(stderrpath, "w") as stderr:
-                        rundata_dict = {}
-                        print("Output can be found in %s and %s" % (stdoutpath, stderrpath))
-                        try:
-                            instantiate_env = os.environ.copy()
-                            #HIPERMARK_RESULT/RUNTIME: path for impl. to store result/runtime
-                            instantiate_env["HIPERMARK_INPUT_NAME"] = inst['dataset']
-                            instantiate_env["HIPERMARK_RESULT"] = resultpath
-                            instantiate_env["HIPERMARK_RUNTIME"] = runtimepath
-                            configure_environment_vars(runtimeconf['dict'],
-                                                       instantiate_env)
-                            timestamp = time.time()
-                            rundata_dict[TIMESTAMP_START] = str(timestamp)
-                            proc = subprocess.Popen(["make", "-f", inst['implementation_makefile'], "run"],
-                                                    env=instantiate_env,
-                                                    stdout=stdout,
-                                                    stderr=stderr,
-                                                    stdin=subprocess.PIPE,
-                                                    close_fds=True,
-                                                    cwd=inst_dir) #run a case
-                            proc.stdin.close() # Make sure stdin EOFs.
-                            proc.wait()
-                            timestamp = time.time()
-                            rundata_dict[TIMESTAMP_END] = str(timestamp)
-                            rundata_dict[RETURN_CODE] = str(proc.returncode)
-                        except:
-                            note_result(results,
-                                        inst['benchmark'].name,
-                                        inst['implementation'].name,
-                                        inst['stat_config_name'],
-                                        inst['stat_config_dict'],
-                                        runtimeconf['name'],
-                                        runtimeconf['dict'],
-                                        inst['dataset'],
-                                        run,
-                                        "could not run")
-                            print("Spoiler: failed")
-                            continue
-                if proc.returncode != 0:
-                    note_result(results,
-                                inst['benchmark'].name,
-                                inst['implementation'].name,
-                                inst['stat_config_name'],
-                                inst['stat_config_dict'],
-                                runtimeconf['name'],
-                                runtimeconf['dict'],
-                                inst['dataset'],
-                                run,
-                                "non-zero exit code")
-                    print("Spoiler: failed")
-                    continue
-                
-                try:
-                    runtime = read_runtime(run_output)
-                    rundata_dict[RUNTIME] = str(runtime)
-                except IOError:
-                    note_result(results,
-                                inst['benchmark'].name,
-                                inst['implementation'].name,
-                                inst['stat_config_name'],
-                                inst['stat_config_dict'],
-                                runtimeconf['name'],
-                                runtimeconf['dict'],
-                                inst['dataset'],
-                                run,
-                                "no runtime measurement")
-                    rundata_dict[RUNTIME] = "no runtime measurement"
-                    continue
-                except ValueError:
-                    note_result(results,
-                            inst['benchmark'].name,
-                                inst['implementation'].name,
-                                inst['stat_config_name'],
-                                inst['stat_config_dict'],
-                                runtimeconf['name'],
-                                runtimeconf['dict'],
-                                inst['dataset'],
-                                run,
-                                "non-integer runtime measurement")
-                    rundata_dict[RUNTIME] = "non-integer runtime measurement"
-                    continue
-                
-                try:
-                    resultfile = os.path.join(run_output, RESULT_FILENAME)
-                    expectedfile = inst['expected_output_file'] 
-                    if b.external_validation:
-                        evstdoutpath = os.path.join(run_output, EXT_VALIDATION_STDOUT_FILENAME)
-                        evstderrpath = os.path.join(run_output, EXT_VALIDATION_STDERR_FILENAME)
-                        with open(evstdoutpath, 'w') as evstdout:
-                            with open(evstdoutpath, 'w') as evstderr:
-                                print("Launching external validation")
-                                proc = subprocess.Popen([b.external_validation_file, resultfile, expectedfile],
-                                                        stdout=evstdout,
-                                                        stderr=evstderr,
-                                                        stdin=subprocess.PIPE,
-                                                        close_fds=True,
-                                                        cwd=inst_dir)
-                                #return code 0 of above means succesfull val.
-                        proc.stdin.close() # Make sure stdin EOFs.
-                        proc.wait()
-                        match = 1 ^ proc.returncode
-                    else:
-                        result = read_json_file(resultfile)
-                        expected = read_json_file(expectedfile)
-                        match = compare_json(result, expected)
-                        # write to validation
-                        rundata_dict[VALIDATION] = str(int(match))
-                    if match:
-                        note_result(results,
-                                    inst['benchmark'].name,
-                                    inst['implementation'].name,
-                                    inst['stat_config_name'],
-                                    inst['stat_config_dict'],
-                                    runtimeconf['name'],
-                                    runtimeconf['dict'],
-                                    inst['dataset'],
-                                    run,
-                                    runtime)
-                    else:
-                        note_result(results,
-                                    inst['benchmark'].name,
-                                    inst['implementation'].name,
-                                    inst['stat_config_name'],
-                                    inst['stat_config_dict'],
-                                    runtimeconf['name'],
-                                    runtimeconf['dict'],
-                                    inst['dataset'],
-                                    run,
-                                    "result did not match expected result")
-                except (IOError, ValueError):
-                    note_result(results,
-                                inst['benchmark'].name,
-                                inst['implementation'].name,
-                                inst['stat_config_name'],
-                                inst['stat_config_dict'],
-                                runtimeconf['name'],
-                                runtimeconf['dict'],
-                                inst['dataset'],
-                                run,
-                                "cannot read result")
-                    rundata_dict[VALIDATION] = "cannot read result\n"
-                f = open(os.path.join(run_output, RUNDATA_FILENAME), "w")
-                f.write(json.dumps(rundata_dict))
-                f.close()
-    return (results, failed_insts, failed_data_insts) 
+    for inst in insts:
+        for dataset in inst['datasets']:
+            if not use_dataset_fn(dataset):
+                continue
+            for runtimeconf in inst['implementation'].runtime_config_list:
+                run_case(results, inst, dataset, runtimeconf)
+    return (results, failed_insts)
                         
                         
 def read_runtime(output_dir):
@@ -838,7 +779,7 @@ if __name__ == '__main__':
         else:
             return dataset in datasets
 
-    (results, failed_to_instantiate, failed_to_instantiate_data) = (
+    (results, failed_to_instantiate) = (
         run_some_benchmark_implementations(hipermark_dir,
                                            instantiations_dir,
                                            os.path.join(hipermark_dir, benchmark),
@@ -847,15 +788,6 @@ if __name__ == '__main__':
                                            run_implementation_fn,
                                            use_dataset_fn)
     )
-
-    for failed in failed_to_instantiate_data:
-        print("Failed to instantiate this dataset: benchmark %s, implementation %s, static config dict %s, static config name %s, dataset %s. Exit code was %d." %
-              (failed['benchmark'], failed['implementation'], failed['stat_config_dict'], failed['stat_config_name'], failed['dataset'], failed['retcode']))
-        print("Stdout\n")
-        print(failed['stdout'])
-        print("Stderr\n")
-        print(failed['stderr'])
-        print("")
 
     for failed in failed_to_instantiate:
         print("Failed to instantiate benchmark %s, implementation %s, static config dict %s, static config name %s. Exit code was %d." %
