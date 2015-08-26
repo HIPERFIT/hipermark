@@ -374,23 +374,37 @@ def get_dataset_names(implementation):
     configurations.
     """
     first = True
-    for sconf_name in implementation.static_configs:
+    for sconf in implementation.static_configs.itervalues():
         if first:
-            static_config = implementation.static_configs[sconf_name]
-            # looping (mapping) over all values of the cases dictionary.
-            dataset_names = map(lambda case: case.name, static_config.cases.itervalues())
+            dataset_names = map(lambda case: case.name, sconf.cases.itervalues())
             first = False
         else:
-            static_config = implementation.static_configs[sconf_name]
-            dataset_names_new = map(lambda case: case.name, static_config.cases.itervalues())
+            dataset_names_new = map(lambda case: case.name, sconf.cases.itervalues())
             if not set(dataset_names) == set(dataset_names_new):
                 raise Exception("The static configuration of implementation \
                 %s do not agree of dataset names. Both %s, and %s were observed\
                 " % (implementation.name, dircontents, dircontents_new))
-    # convert from unicode to string before returning            
     return map(lambda name: str(name), dataset_names)
 
-#def get_runtime_var_names(implementation):
+def get_runtime_var_names(implementation):
+    """Returns a list of names of all the runtime variables that have been used
+    for a given implementation. These must be the same for all runs.
+    """
+    first = True
+    for sconf in implementation.static_configs.itervalues():
+        for cases in sconf.cases.itervalues():
+            for dconf in cases.dynamic_configurations.itervalues():
+                if first:
+                    dconf_names = list(dconf.configuration.keys())
+                    first = False
+                else:
+                    dconf_names_new = list(dconf.configuration.keys())
+                    if not set(dconf_names) == set(dconf_names_new):
+                        raise Exception("The runs of %s do not agree on the \
+                        names of the dynamic configuration variables. Both \
+                        %s and %s were observed." %
+                                        (dconf_names, dconf_names_new))
+    return map(lambda name: str(name), dconf_names)         
 
 def get_var_names(implementation):
     """Returns the variable names that a specific implementation contains.
@@ -399,7 +413,7 @@ def get_var_names(implementation):
     variables = {}
     variables["static_configurations"] = get_static_var_names(implementation)
     variables["datasets"] = get_dataset_names(implementation)
-    #variables["runtime_configurations"] = get_runtime_var_names(implementation)
+    variables["runtime_configurations"] = get_runtime_var_names(implementation)
     return variables
 
 # Testing occurs below this line. Specific dataset is needed for this to work.    
@@ -411,6 +425,8 @@ print("The static var names are:")
 print(var_names["static_configurations"])
 print("The dataset names are:")
 print(var_names["datasets"])
+print("The runtime variable's names are:")
+print(var_names["runtime_configurations"])
 print(compn)
 sc0 = compn.static_configs['b335a81d722b']
 print(sc0)
