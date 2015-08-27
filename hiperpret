@@ -208,6 +208,9 @@ class Case:
                                         self,
                                         dconf,
                                         dconf_path)
+        if not self.dynamic_configurations:
+            raise Exception("The case:\n %s does not contain any folders for \
+            dynamic configurations." % str(self))
 
     def __str__(self):
         return "benchmark: {0}, \
@@ -423,43 +426,68 @@ for bm in dircontents:
     name = os.path.basename(os.path.normpath(bm))
     b[name] = Benchmark(name, bmdir)
 
+#########################################################
+# Below this comment are the visualization functions    #
+# which parse the data collected in the objects whose   #
+# classes are defined above                             #
+#########################################################
 
-def runtime_vs_real_types(instdir, benchmark_name, implementation_name, dataset_name, num_cores):
-    def get_benchmark_object(benchmark_name, instdir):
-        if not os.path.isdir(instdir):
-            raise Exception("Directory %s could not be found." % sys.argv[1])
-        dircontents = os.listdir(instdir)
-        b = {}
-        rootdir = os.getcwd()
-        non_dirs = filter(lambda path:
-                          not os.path.isdir(os.path.join(rootdir, instdir, path)),
-                          dircontents)
-        if non_dirs:
-            raise Exception("Only directories may be be placed in %s." % sys.argv[1])
-        bmdirs = map(lambda bm: os.path.join(rootdir, instdir, bm), dircontents)
-        b_vals = map(lambda name, bmdir: Benchmark(name, bmdir), dircontents, bmdirs)
-        b = dict(zip(dircontents, b_vals))
-        try:
-            benchmark = b[benchmark_name]
-        except KeyError:
-            raise Exception("%s was not found among the benchmark objects." %
-                            benchmark_name)
-        return benchmark
+def get_benchmark_object(benchmark_name, instdir):
+    if not os.path.isdir(instdir):
+        raise Exception("Directory %s could not be found." % sys.argv[1])
+    dircontents = os.listdir(instdir)
+    b = {}
+    rootdir = os.getcwd()
+    non_dirs = filter(lambda path:
+                      not os.path.isdir(os.path.join(rootdir, instdir, path)),
+                      dircontents)
+    if non_dirs:
+        raise Exception("Only directories may be be placed in %s." % sys.argv[1])
+    bmdirs = map(lambda bm: os.path.join(rootdir, instdir, bm), dircontents)
+    b_vals = map(lambda name, bmdir: Benchmark(name, bmdir), dircontents, bmdirs)
+    b = dict(zip(dircontents, b_vals))
+    try:
+        benchmark = b[benchmark_name]
+    except KeyError:
+        raise Exception("%s was not found among the benchmark objects." %
+                        benchmark_name)
+    return benchmark
 
-    def get_implementation_object(benchmark, implementation_name):
-        try:
-            implementation = benchmark.implementations[implementation_name]
-        except KeyError:
-            raise Exception("%s was not found among the implementations of benchmark\
-            %s" %(implementation_name))
-        return implementation
+def get_implementation_object(benchmark, implementation_name):
+    try:
+        implementation = benchmark.implementations[implementation_name]
+    except KeyError:
+        raise Exception("%s was not found among the implementations of benchmark\
+        %s" %(implementation_name))
+    return implementation
+
+def get_statistics(dconfs):
+    """ Returns a list of tuples where tuple[0] = av, tuple[1] = std_dev,
+        tuple[2] = uncertainty on average."""
+    def _get_statistic(dconf):
+        """Given one dynamic configuration, this function returns the average,
+            standard deviation, and the uncertainty of the av."""
+        N = dconf.number_of_runs
+        runtimes = map(lambda run: run.runtime, dconf.runs.itervalues())
+        av, std_dev = get_average_and_stddev(runtimes)
+        uncertainty = std_dev/math.sqrt(N)
+        return av, std_dev, uncertainty
     
+    return map(_get_statistic, dconfs)
+
+    # Can this be generalized?
+    # Real types is a static variable name so this should be generalizable to
+    # all static variable names.
+def runtime_vs_real_types(instdir, benchmark_name, implementation_name,
+                          dataset_name, num_cores):
+    # Is this function necessary?
+    # This function can be generalized to get_static_variable_values.
     def get_real_types(implementation):
         """Finds all the real types that have been used in this implementation
         """
         try:
             real_types = map(lambda sconf: sconf.configuration['REAL_TYPE'],\
-                          implementation.static_configs.itervalues())
+                             implementation.static_configs.itervalues())
         except KeyError:
             raise Exception("REAL_TYPE is not a static configuration \
             variable of %s" % implementation.name)
@@ -467,11 +495,16 @@ def runtime_vs_real_types(instdir, benchmark_name, implementation_name, dataset_
 
     def get_case_objects(implementation, dataset_name):
         """Returns all cases that conform to parent function arguments.
+        This function is the one that allows real type to be a variable
+        since it does not filter on any static variable values.
         """
         sconfs = implementation.static_configs.itervalues()
         cases = map(lambda sconf: sconf.cases[dataset_name], sconfs)
         return cases
 
+    # This function is probably generalizable to an arbitrary number of dynamic
+    # variables where the filter function below is put into a loop or is mapped
+    # over to include several variables which could be provided as a list.
     def get_dconf_objects(cases, num_cores):
         """Returns the dynamic configuration objects that conform to parent
         functions arguments.
@@ -486,30 +519,95 @@ def runtime_vs_real_types(instdir, benchmark_name, implementation_name, dataset_
             return dconfs[0]
 
         return map(extract_dconfs, cases)
-
-    def get_statistic(dconf):
-        """Given one dynamic configuration, this function returns the average,
-        standard deviation, and the uncertainty of the av."""
-        N = dconf.number_of_runs
-        runtimes = map(lambda run: run.runtime, dconf.runs.itervalues())
-        av, std_dev = get_average_and_stddev(runtimes)
-        uncertainty = std_dev/math.sqrt(N)
-        return av, std_dev, uncertainty
-
-    def get_statistics(dconfs):
-        """ Returns a list of tuples where tuple[0] = av, tuple[1] = std_dev,
-        tuple[2] = uncertainty on average."""
-        return map(get_statistic, dconfs)
             
     benchmark = get_benchmark_object(benchmark_name, instdir)
     implementation = get_implementation_object(benchmark, implementation_name)
-    real_types = get_real_types(implementation)
+    real_types = get_real_types(implementation) #NOT USED ATM
     cases = get_case_objects(implementation, dataset_name)
     dynamic_configs = get_dconf_objects(cases, num_cores)
     statistics = get_statistics(dynamic_configs)
     return statistics
 
-def visualize(statistics):
+# Generalize real type to a list of locked static variable values.
+# This could be generalized to speed_up_vs_any_dynamic_variable
+def speed_up_vs_no_threads(instdir, benchmark_name, implementation_name,
+                           real_type, dataset_name):
+    """This function returns a normalized measure of the reciprocal runtime.
+    The normalization is wrt one thread.
+
+    For openmp implementations only.
+    """
+    def get_static_configs(implementation, real_type_value):
+        try:
+            static_configs = filter(lambda sconf:
+                                    real_type_value == sconf.configuration['REAL_TYPE'],
+                                    implementation.static_configs.itervalues())
+        except KeyError:
+            raise Exception("The static configuration of implementation %s does\
+            not contain a key with the name REAL_TYPE." % implementation.name)
+        if not len(static_configs) == 1:
+            raise Exception("Non-unique static configuration object was \
+            extracted from the implementation %s." % implementation.name)
+        return static_configs[0]
+
+    def get_case_objects(static_config, dataset_name):
+        try:
+            case = static_config.cases[dataset_name]
+        except KeyError:
+            raise Exception("The dataset name %s was not among the case objects\
+            in the static configuration object %s." %
+            (dataset_name, static_config.name))
+        return case
+
+    def get_dconf_objects(case):
+        dconfs =  case.dynamic_configurations.values()
+        return dconfs
+
+    def get_statistics(dconfs):
+        """ Returns a list of tuples where tuple[0] = av, tuple[1] = std_dev,
+        tuple[2] = uncertainty on average. Also returns the corresponding 
+        x values"""
+        def _get_statistic(dconf):
+            """Given one dynamic configuration, this function returns the average,
+            standard deviation, and the uncertainty of the av."""
+            N = dconf.number_of_runs
+            runtimes = map(lambda run: run.runtime,
+                           dconf.runs.itervalues())
+            no_of_threads = dconf.configuration['NUM_THREADS']
+            no_of_threads = str(no_of_threads)
+            no_of_threads = int(no_of_threads)
+            av, std_dev = get_average_and_stddev(runtimes)
+            uncertainty = std_dev/math.sqrt(N)
+            return no_of_threads, av, std_dev, uncertainty
+
+        def _normalize_tuple(st, nc):
+            no_of_threads = st[0]
+            av = st[1]
+            std_dev = st[2]
+            unc = st[3]
+            perf_normalized = nc / av
+            std_dev_perf = nc * std_dev / av**2
+            unc_perf = nc * unc / av**2
+            return (no_of_threads, perf_normalized, std_dev_perf, unc_perf)
+
+        statistics = map(_get_statistic, dconfs)
+        normalization_constant = filter(lambda stat: 1 == stat[0], statistics)[0][1]
+        statistics = [_normalize_tuple(x, normalization_constant) for x in statistics]
+        statistics.sort(key=lambda tup: tup[1])
+        return statistics
+        
+        
+            
+    benchmark = get_benchmark_object(benchmark_name, instdir)
+    implementation = get_implementation_object(benchmark, implementation_name)
+    static_config = get_static_configs(implementation, real_type)
+    case = get_case_objects(static_config, dataset_name)
+    dconfs = get_dconf_objects(case)
+    statistics = get_statistics(dconfs)
+    return statistics
+    
+
+def bar_visualize(statistics):
     N = len(statistics)
     avs = tuple(map(lambda stat: stat[0], statistics))
     uncs = tuple(map(lambda stat: stat[2], statistics))
@@ -536,6 +634,34 @@ def visualize(statistics):
     autolabel(rects1)
     plt.show()
 
+def bar_visualize_rt_vs_nt(statistics):
+    N = len(statistics)
+    avs = tuple(map(lambda stat: stat[1], statistics))
+    uncs = tuple(map(lambda stat: stat[3], statistics))
+    width = 0.35
+    ind = np.arange(N)
+    
+    fig, ax = plt.subplots()
+    print("AVS: ", avs)
+    print("UNCS: ", uncs)
+    rects1 = ax.bar(ind, avs, width, color='r', yerr=uncs)
+    ax.set_ylabel('Performance increase')
+    ax.set_title('Performance vs no of threads of OptionPricing, cpp_openmp, small dataset, doubles')
+    ax.set_xticks(ind + width/2)
+    labels = tuple(map(lambda stat: stat[0], statistics))
+    ax.set_xticklabels( labels )
+
+    
+    def autolabel(rects):
+        # attach some text labels
+        for rect in rects:
+            height = float(rect.get_height())
+            ax.text(rect.get_x()+rect.get_width()/2., 1.05*height, '%.2f'%float(height),
+                    ha='center', va='bottom')
+
+    autolabel(rects1)
+    plt.show()
+
 # Testing occurs below this line. Specific dataset is needed for this to work.
 print("These benchmarks were found:")
 for benchmark in b.itervalues():
@@ -554,4 +680,8 @@ print("The different values of NUM_THREADS are:")
 statistics = runtime_vs_real_types(sys.argv[1], 'OptionPricing', 'cpp_openmp', 'small', 2)
 print("FUNCTION RETURNS:")
 print(statistics)
-visualize(statistics)
+statistics = speed_up_vs_no_threads(sys.argv[1], 'OptionPricing', 'cpp_openmp',
+                                    'double', 'small')
+print("2nd FUNCTION RETURNS:")
+print(statistics)
+bar_visualize_rt_vs_nt(statistics)
