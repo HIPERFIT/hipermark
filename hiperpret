@@ -634,22 +634,28 @@ def bar_visualize(statistics):
     autolabel(rects1)
     plt.show()
 
-def bar_visualize_rt_vs_nt(statistics):
-    N = len(statistics)
-    avs = tuple(map(lambda stat: stat[1], statistics))
-    uncs = tuple(map(lambda stat: stat[3], statistics))
+def bar_visualize_rt_vs_nt(statistics1, statistics2):
+    N = len(statistics1)
+    avs1 = tuple(map(lambda stat: stat[1], statistics1))
+    uncs1 = tuple(map(lambda stat: stat[3], statistics1))
+    avs2 = tuple(map(lambda stat: stat[1], statistics2))
+    uncs2 = tuple(map(lambda stat: stat[3], statistics2))
     width = 0.35
     ind = np.arange(N)
     
     fig, ax = plt.subplots()
-    print("AVS: ", avs)
-    print("UNCS: ", uncs)
-    rects1 = ax.bar(ind, avs, width, color='r', yerr=uncs)
+    print("AVS1: ", avs1) #DEV!
+    print("UNCS1: ", uncs1) #DEV!
+    print("AVS2: ", avs2) #DEV!
+    print("UNCS2: ", uncs2) #DEV!
+    rects1 = ax.bar(ind, avs1, width, color='r', yerr=uncs1)
+    rects2 = ax.bar(ind + width, avs2, width, color='g', yerr=uncs2)
     ax.set_ylabel('Performance increase')
     ax.set_title('Performance vs no of threads of OptionPricing, cpp_openmp, small dataset, doubles')
-    ax.set_xticks(ind + width/2)
-    labels = tuple(map(lambda stat: stat[0], statistics))
+    ax.set_xticks(ind + width)
+    labels = tuple(map(lambda stat: stat[0], statistics1))
     ax.set_xticklabels( labels )
+    ax.legend( (rects1[0], rects2[0]), ('Double', 'Float') )
 
     
     def autolabel(rects):
@@ -660,6 +666,7 @@ def bar_visualize_rt_vs_nt(statistics):
                     ha='center', va='bottom')
 
     autolabel(rects1)
+    autolabel(rects2)
     plt.show()
 
 # Testing occurs below this line. Specific dataset is needed for this to work.
@@ -680,8 +687,10 @@ print("The different values of NUM_THREADS are:")
 statistics = runtime_vs_real_types(sys.argv[1], 'OptionPricing', 'cpp_openmp', 'small', 2)
 print("FUNCTION RETURNS:")
 print(statistics)
-statistics = speed_up_vs_no_threads(sys.argv[1], 'OptionPricing', 'cpp_openmp',
-                                    'double', 'small')
+statistics1 = speed_up_vs_no_threads(sys.argv[1], 'OptionPricing', 'cpp_openmp',
+                                     'double', 'small')
+statistics2 = speed_up_vs_no_threads(sys.argv[1], 'OptionPricing', 'cpp_openmp',
+                                     'float', 'small')
 print("2nd FUNCTION RETURNS:")
 print(statistics)
-bar_visualize_rt_vs_nt(statistics)
+bar_visualize_rt_vs_nt(statistics1, statistics2)
