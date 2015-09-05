@@ -614,7 +614,11 @@ def get_2d_points_dconf_dicts(dconf_dicts,
     try:
         x_values_floats = map(lambda x: float(x), x_values)
     except ValueError:
-        print("x-values not recognized as numbers.")
+        print("x-values not recognized as numbers in this configuration:")
+        try:
+            print(str(ret_dconfs[0]['benchmark_name']), str(ret_dconfs[0]['implementation_name']))
+        except:
+            pass
         return x_values, y_values_floats, y_unc_floats
     return x_values_floats, y_values_floats, y_unc_floats
 
@@ -653,11 +657,14 @@ def draw_figure(x_vals, y_vals, y_uncs, fig_name, dep_var, free_var_name, fig_ty
     ax.set_xlabel(free_var_name)
     title = fig_name
     ax.set_title(title)
-    ax.set_xticks(ind + width/2)
-    ax.set_xticklabels(x_vals) #Maybe the number of these should be reduced?
     #ax.legend(rects1, fig_name) # Other options?
     if fig_type == "bar":
         autolabel(rects1)
+        ax.set_xticks(ind + width/2)
+        ax.set_xticklabels(x_vals) #Maybe the number of these should be reduced?
+    else:
+        ax.set_xticks(ind)
+        ax.set_xticklabels(x_vals)
     fig_filename = os.path.join(HIPERPRET_FOLDER, FIGURE_FOLDER_NAME, fig_name)
     pylab.savefig(fig_filename, bbox_inches='tight')
     
