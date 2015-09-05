@@ -6,6 +6,10 @@ import math
 import json
 import matplotlib.pyplot as plt
 import numpy as np
+import pylab #
+import operator #used for sorting
+import errno
+
 
 # These files are read, not written.
 RESULT_FILENAME = "result.json"
@@ -16,6 +20,14 @@ STDOUT_FILENAME = "stdout.log"
 STATIC_CONFIGURATION_FILENAME = "static_configuration.json"
 DYNAMIC_CONFIGURATION_FILENAME = "dynamic_configuration.json"
 RUN_OUTPUT_PATH = "run_output"
+FIGURE_CONFIGURATION_FILENAME = "hiperpret_figure_configuration.json"
+
+#written files
+EXPORT_DCONFS_FILENAME_PREPEND = "export_dconfs_"
+EXPORT_RUNS_FILENAME_PREPEND = "export_runs_"
+EXPORT_FOLDER_NAME = "exported_jsons"
+FIGURE_FOLDER_NAME = "produced_figures"
+HIPERPRET_FOLDER = "hiperpret"
 
 # dict entries in rundata.json
 TIMESTAMP_START = "timestamp_start"
@@ -23,6 +35,20 @@ TIMESTAMP_END = "timestamp_end"
 RETURN_CODE = "return_code"
 VALIDATION = "validation"
 RUNTIME = "runtime"
+
+def mkdir_p(path):
+    """Makes a directory and all non-existing directories needed to contain this directory 
+    If the directory already exists, no error message is given and the function returns.
+    
+    keyword arguments:
+    path -- full path of the directory to be made
+    """
+    try:
+        os.makedirs(path)
+    except OSError as exc: # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else: raise
 
 def read_json_file(filename):
     """ returns an array containing the content of the JSON file.
@@ -85,7 +111,6 @@ class Run:
                 with open(os.path.join(self.directory,
                                        STDOUT_FILENAME), "r") as stdout_fp:
                     try:
-                        # Also catch the KeyError here!!
                         rd_dict_path = os.path.join(self.directory,
                                                     RUNDATA_FILENAME)
                         rd_dict = read_json_file(rd_dict_path)
@@ -97,10 +122,14 @@ class Run:
                         self.stderr = str(stderr_fp.read())
                         self.stdout = str(stdout_fp.read())
                     except ValueError as e:
-                        # How are the arguments of the exception presented?
                         raise Exception("The content of one of\
-                        the result files in %s was malformed:\
+                        the results in %s was malformed:\
                         %s." % (self.directory, e.args()))
+                    except KeyError as e:
+                        print("Missing key in JSON file.")
+                        print(e.args())
+                        raise Exception("The content of %s did not contain the\
+                        expected keys." % RUNDATA_FILENAME)
 
     def __str__(self):
         return "benchmark: {0}, \
@@ -315,63 +344,6 @@ class Benchmark:
         a = "benchmark: {0}".format(self.name)
         return a
 
-
-
-
-def get_y_vs_x(y_name, x_name):
-    """ Given a certain benchmark, this should allow the user to select one free 
-    variable and one dependent variable. """
-
-def get_static_var_names(implementation):
-    """Returns a list of all static (compile time) configuration variable names.
-    Returns the empty list if there are no
-    """
-    if implementation.static_configs == {}:
-        return []
-    first = True
-    for sconf_name in implementation.static_configs:
-        static_conf = implementation.static_configs[sconf_name]
-        if first:
-            static_var_names= list(static_conf.configuration.keys())
-            first = False
-        else:
-            # we demand
-            # that the dictionary contain the same keys as the first.
-            sconf_keys = list(static_conf.configuration.keys())
-            if not set(static_var_names) == set(sconf_keys):
-                raise Exception("Static configuration keys differ for \
-                implementation %s" % implementation.name)
-    return map(lambda name: str(name), static_var_names)
-
-def get_runtime_var_names(implementation):
-    """Returns a list of names of all the runtime variables that have been used
-    for a given implementation. These must be the same for all runs.
-    """
-    first = True
-    for sconf in implementation.static_configs.itervalues():
-        for cases in sconf.cases.itervalues():
-            for dconf in cases.dynamic_configurations.itervalues():
-                if first:
-                    dconf_names = list(dconf.configuration.keys())
-                    first = False
-                else:
-                    dconf_names_new = list(dconf.configuration.keys())
-                    if not set(dconf_names) == set(dconf_names_new):
-                        raise Exception("The runs of %s do not agree on the \
-                        names of the dynamic configuration variables. Both \
-                        %s and %s were observed." %
-                                        (dconf_names, dconf_names_new))
-    return map(lambda name: str(name), dconf_names)         
-
-def get_var_names(implementation):
-    """Returns the variable names that a specific implementation contains.
-    The return type is a dict with list of strings as values.
-    """
-    variables = {}
-    variables["static_configurations"] = get_static_var_names(implementation)
-    variables["runtime_configurations"] = get_runtime_var_names(implementation)
-    return variables
-
 def get_run_values(run_dicts):
     """For a given list of run_dicts (probably calculated from\
     get_run_dicts), this function returns a dictionary where the keys are \
@@ -386,32 +358,13 @@ def get_run_values(run_dicts):
         var_dict[var] = val.sort()
     return var_dict
 
-# Why is rootdir needed? It allows for relative paths upon execution!
-# This program could also demand a benchmark as sys.argv[1] thus only
-# allowing it to analyze one benchmark at a time.
-if len(sys.argv) != 2:
-    raise Exception("Usage %s <directory_containing_hipermark_results>" %
-                    sys.argv[0])
-instdir = sys.argv[1]
-if not os.path.isdir(instdir):
-    raise Exception("Directory %s could not be found." % sys.argv[1])
-dircontents = os.listdir(instdir)
-b = {}
-rootdir = os.getcwd()
-for bm in dircontents:
-    bmdir = os.path.join(rootdir, instdir, bm)
-    if not os.path.isdir(bmdir):
-        raise Exception("Only directories may be placed in %s. %s is not a \
-        directory." % (sys.argv[1], bm))
-    name = os.path.basename(os.path.normpath(bm))
-    b[name] = Benchmark(name, bmdir)
-
 #########################################################
 # Below this comment are the visualization functions    #
 # which parse the data collected in the objects whose   #
 # classes are defined above                             #
 #########################################################
 
+## VISUALIZATION HELPER FUNCTIONS
 def get_benchmark_object(benchmark_name, instdir):
     if not os.path.isdir(instdir):
         raise Exception("Directory %s could not be found." % sys.argv[1])
@@ -455,194 +408,7 @@ def get_statistics(dconfs):
     
     return map(_get_statistic, dconfs)
 
-    # Can this be generalized?
-    # Real types is a static variable name so this should be generalizable to
-    # all static variable names.
-def runtime_vs_real_types(instdir, benchmark_name, implementation_name,
-                          dataset_name, num_cores):
-    # Is this function necessary?
-    # This function can be generalized to get_static_variable_values.
-    def get_real_types(implementation):
-        """Finds all the real types that have been used in this implementation
-        """
-        try:
-            real_types = map(lambda sconf: sconf.configuration['REAL_TYPE'],\
-                             implementation.static_configs.itervalues())
-        except KeyError:
-            raise Exception("REAL_TYPE is not a static configuration \
-            variable of %s" % implementation.name)
-        return map(lambda name: str(name), real_types)
 
-    def get_case_objects(implementation, dataset_name):
-        """Returns all cases that conform to parent function arguments.
-        This function is the one that allows real type to be a variable
-        since it does not filter on any static variable values.
-        """
-        sconfs = implementation.static_configs.itervalues()
-        cases = map(lambda sconf: sconf.cases[dataset_name], sconfs)
-        return cases
-
-    # This function is probably generalizable to an arbitrary number of dynamic
-    # variables where the filter function below is put into a loop or is mapped
-    # over to include several variables which could be provided as a list.
-    def get_dconf_objects(cases, num_cores):
-        """Returns the dynamic configuration objects that conform to parent
-        functions arguments.
-        """
-        def extract_dconfs(case):
-            dconfs = filter(lambda dconf: num_cores == 
-                           int(dconf.configuration['NUM_THREADS']),
-                           case.dynamic_configurations.itervalues())
-            if len(dconfs) != 1:
-                raise Exception("Non-unique dynamic configuration extracted",
-                                map(lambda dconf: dconf.name, dconfs))
-            return dconfs[0]
-
-        return map(extract_dconfs, cases)
-            
-    benchmark = get_benchmark_object(benchmark_name, instdir)
-    implementation = get_implementation_object(benchmark, implementation_name)
-    real_types = get_real_types(implementation) #NOT USED ATM
-    cases = get_case_objects(implementation, dataset_name)
-    dynamic_configs = get_dconf_objects(cases, num_cores)
-    statistics = get_statistics(dynamic_configs)
-    return statistics
-
-# Generalize real type to a list of locked static variable values.
-# This could be generalized to speed_up_vs_any_dynamic_variable
-def speed_up_vs_no_threads(instdir, benchmark_name, implementation_name,
-                           real_type, dataset_name):
-    """This function returns a normalized measure of the reciprocal runtime.
-    The normalization is wrt one thread.
-
-    For openmp implementations only.
-    """
-    def get_static_configs(implementation, real_type_value):
-        try:
-            static_configs = filter(lambda sconf:
-                                    real_type_value == sconf.configuration['REAL_TYPE'],
-                                    implementation.static_configs.itervalues())
-        except KeyError:
-            raise Exception("The static configuration of implementation %s does\
-            not contain a key with the name REAL_TYPE." % implementation.name)
-        if not len(static_configs) == 1:
-            raise Exception("Non-unique static configuration object was \
-            extracted from the implementation %s." % implementation.name)
-        return static_configs[0]
-
-    def get_case_objects(static_config, dataset_name):
-        try:
-            case = static_config.cases[dataset_name]
-        except KeyError:
-            raise Exception("The dataset name %s was not among the case objects\
-            in the static configuration object %s." %
-            (dataset_name, static_config.name))
-        return case
-
-    def get_dconf_objects(case):
-        dconfs =  case.dynamic_configurations.values()
-        return dconfs
-
-    def get_statistics(dconfs):
-        """ Returns a list of tuples where tuple[0] = av, tuple[1] = std_dev,
-        tuple[2] = uncertainty on average. Also returns the corresponding 
-        x values"""
-        def _get_statistic(dconf):
-            """Given one dynamic configuration, this function returns the average,
-            standard deviation, and the uncertainty of the av."""
-            N = dconf.number_of_runs
-            runtimes = map(lambda run: run.runtime,
-                           dconf.runs.itervalues())
-            no_of_threads = dconf.configuration['NUM_THREADS']
-            no_of_threads = str(no_of_threads)
-            no_of_threads = int(no_of_threads)
-            av, std_dev = get_average_and_stddev(runtimes)
-            uncertainty = std_dev/math.sqrt(N)
-            return no_of_threads, av, std_dev, uncertainty
-
-        def _normalize_tuple(st, nc):
-            no_of_threads = st[0]
-            av = st[1]
-            std_dev = st[2]
-            unc = st[3]
-            perf_normalized = nc / av
-            std_dev_perf = nc * std_dev / av**2
-            unc_perf = nc * unc / av**2
-            return (no_of_threads, perf_normalized, std_dev_perf, unc_perf)
-
-        statistics = map(_get_statistic, dconfs)
-        normalization_constant = filter(lambda stat: 1 == stat[0], statistics)[0][1]
-        statistics = [_normalize_tuple(x, normalization_constant) for x in statistics]
-        statistics.sort(key=lambda tup: tup[1])
-        return statistics   
-            
-    benchmark = get_benchmark_object(benchmark_name, instdir)
-    implementation = get_implementation_object(benchmark, implementation_name)
-    static_config = get_static_configs(implementation, real_type)
-    case = get_case_objects(static_config, dataset_name)
-    dconfs = get_dconf_objects(case)
-    statistics = get_statistics(dconfs)
-    return statistics
-
-def bar_visualize(statistics):
-    N = len(statistics)
-    avs = tuple(map(lambda stat: stat[0], statistics))
-    uncs = tuple(map(lambda stat: stat[2], statistics))
-    width = 0.35
-    ind = np.arange(N)
-    
-    fig, ax = plt.subplots()
-    print("AVS: ", avs)
-    print("UNCS: ", uncs)
-    rects1 = ax.bar(ind, avs, width, color='r', yerr=uncs)
-    ax.set_ylabel('Runtime [ms]')
-    ax.set_title('Runtime of OptionPricing, cpp_openmp, small dataset, 2 threads')
-    ax.set_xticks(ind + width/2)
-    ax.set_xticklabels( ('double', 'float') )
-    
-    def autolabel(rects):
-        # attach some text labels
-        for rect in rects:
-            height = rect.get_height()
-            ax.text(rect.get_x()+rect.get_width()/2., 1.05*height, '%d'%int(height),
-                    ha='center', va='bottom')
-
-    autolabel(rects1)
-    plt.show()
-
-def bar_visualize_rt_vs_nt(statistics1, statistics2):
-    N = len(statistics1)
-    avs1 = tuple(map(lambda stat: stat[1], statistics1))
-    uncs1 = tuple(map(lambda stat: stat[3], statistics1))
-    avs2 = tuple(map(lambda stat: stat[1], statistics2))
-    uncs2 = tuple(map(lambda stat: stat[3], statistics2))
-    width = 0.35
-    ind = np.arange(N)
-    
-    fig, ax = plt.subplots()
-    print("AVS1: ", avs1) #DEV!
-    print("UNCS1: ", uncs1) #DEV!
-    print("AVS2: ", avs2) #DEV!
-    print("UNCS2: ", uncs2) #DEV!
-    rects1 = ax.bar(ind, avs1, width, color='r', yerr=uncs1)
-    rects2 = ax.bar(ind + width, avs2, width, color='g', yerr=uncs2)
-    ax.set_ylabel('Performance increase')
-    ax.set_title('Performance vs no of threads of OptionPricing, cpp_openmp, small dataset, doubles')
-    ax.set_xticks(ind + width)
-    labels = tuple(map(lambda stat: stat[0], statistics1))
-    ax.set_xticklabels( labels )
-    ax.legend( (rects1[0], rects2[0]), ('Double', 'Float') )
-
-    def autolabel(rects):
-        # attach some text labels
-        for rect in rects:
-            height = float(rect.get_height())
-            ax.text(rect.get_x()+rect.get_width()/2., 1.05*height, '%.2f'%float(height),
-                    ha='center', va='bottom')
-
-    autolabel(rects1)
-    autolabel(rects2)
-    plt.show()
 
 def get_all_static_configs(implementation):
     sconfs = implementation.static_configs.values()
@@ -667,11 +433,13 @@ def get_all_runs(dconfs):
     runs = flatten_list(runs)
     return runs
 
-    
+
+### DICTIONARY CREATING FUNCTIONS
 def get_run_dicts(benchmark_name, implementation_name, instdir):
     def _generate_json(run):
         run_data = {}
-        run_data['implementation_name'] = run.benchmark.name
+        run_data['benchmark_name'] = run.benchmark.name
+        run_data['implementation_name'] = run.implementation.name
         run_data.update(run.static_configuration.configuration)
         run_data['dataset_name'] = run.case.name
         run_data.update(run.dynamic_configuration.configuration)        
@@ -692,17 +460,6 @@ def get_run_dicts(benchmark_name, implementation_name, instdir):
     dicts = map(_generate_json, runs)
     return dicts
 
-def export_runs(instdir, benchmark_name, implementation_name, filename):
-    """Given an implementation, this function exports all data generated by
-    hipermark to a JSON file specified by the user. The exported data is a list
-    of all hipermark generated data from each run.
-    """   
-    run_dicts = get_run_dicts(benchmark_name, implementation_name, instdir)
-    with open(filename, "w") as fp:
-        ret = fp.write(json.dumps(run_dicts))
-    return ret
-
-# This function should probably take run_dicts as argument
 def get_dconf_dicts(benchmark_name, implementation_name, instdir):
     """Given an implementation, this function exports all data generated by
     hipermark to a JSON file specified by the user. The exported data is a list
@@ -725,7 +482,8 @@ def get_dconf_dicts(benchmark_name, implementation_name, instdir):
 
     def _generate_json_dconf(dconf):
         dconf_data = {}
-        dconf_data['implementation_name'] = dconf.benchmark.name
+        dconf_data['benchmark_name'] = dconf.benchmark.name
+        dconf_data['implementation_name'] = dconf.implementation.name
         dconf_data.update(dconf.static_configuration.configuration)
         dconf_data['dataset_name'] = dconf.case.name
         dconf_data.update(dconf.configuration)
@@ -742,10 +500,10 @@ def get_dconf_dicts(benchmark_name, implementation_name, instdir):
             run_times.append(run_dict['runtime'])
         N = len(run_times)
         av, stddev = get_average_and_stddev(run_times)
-        configuration['average_runtime'] = av
+        configuration['average runtime'] = av # This key should perhaps be args from func. call
         configuration['std_dev'] = stddev
         configuration['number_of_runs'] = N
-        configuration['uncertainty_of_average'] = stddev/math.sqrt(N)
+        configuration['uncertainty_of_runtime'] = stddev/math.sqrt(N) # args from func call?
         return
 
     benchmark = get_benchmark_object(benchmark_name, instdir)
@@ -759,51 +517,207 @@ def get_dconf_dicts(benchmark_name, implementation_name, instdir):
         set_statistics_for_dconf(config, run_dicts)
     return configurations
 
+
+### EXPORT FUNCTIONS
+def export_runs(instdir, benchmark_name, implementation_name, filename):
+    """Given an implementation, this function exports all data generated by
+    hipermark to a JSON file specified by the user. The exported data is a list
+    of all hipermark generated data from each run.
+    """   
+    run_dicts = get_run_dicts(benchmark_name, implementation_name, instdir)
+    with open(filename, "w") as fp:
+        ret = fp.write(json.dumps(run_dicts))
+    return ret
+
 def export_dconfs(instdir, benchmark_name, implementation_name, filename):
     dconf_dicts = get_dconf_dicts(benchmark_name, implementation_name, instdir)
     with open(filename, "w") as fp:
         ret = fp.write(json.dumps(dconf_dicts))
     return ret
 
-# Should probably not plot graph but only extract the points in a 2D space.
-# Function is not done and all function need to be cleaned up before it can be.
-def bar_visualize(implementation, free_variable, locked_variable_dict):
-    run_dicts = get_run_dicts(implementation.benchmark.name, implementation.name)
-    variables = get_run_values(run_dicts)
-    if free_variable not in variables.keys():
-        raise Exception("The requested free variable %s was not found in" +
-                        str(implementation))
-    req_no_locked_vars = len(locked_variable_dict.keys())
-    if req_no_locked_vars != (len(variables.keys()) - 1):
-        raise Exception("An incorrect number of locked variables where given. \
-        %d locked variables are required." % req_no_locked_vars)
-    dconfs = get_dconf_dicts(implementation.benchmark.name, implementation.name, instdir)
+
+### FUNCTION THAT GENERATES POINTS IN 2-D
+def get_2d_points_dconf_dicts(dconf_dicts,
+                              free_var,
+                              locked_vars,
+                              normalize_performance,
+                              dep_var = "average runtime",
+                              dep_unc = 'uncertainty_of_runtime'):
+    """Given dicts that describe configurations, this function returns three
+    lists. One representing x point, one y points, and one uncertainties on the
+    y-axis.
+
+    Keyword arguments:
+    dconf_dicts -- the list of dictionaries, one element for each configuration.
+    free_var -- The name of the free variable 
+    locked_vars -- a dictionary representing all the locked variables.
+    normalize_performance -- If True, this function returns the norm. recip. val. of dep_var.
+    dep_var -- name of dependent variable (variable on y-axis)
+    dep_unc -- name of uncertainty of dep_var
+    """
+    def _get_normalized_performance(runtimes, uncs):
+        norm_const =runtimes[0] #all lists taken as args are assumed sorted by x_values.
+        performance = map(lambda rt: norm_const / rt, runtimes)
+        # unc_f(x) = unc_x*f'(x)
+        unc_perf = map(lambda unc, runtime: norm_const*unc / runtime**2, uncs, runtimes)
+        return performance, unc_perf        
+        
+    num_of_vars = len(dconf_dicts[0].keys())
+    num_of_locked_vars = len(locked_vars.keys())
+#    if num_of_vars - num_of_locked_vars != 5:
+#       raise Exception("The wrong number of locked variables has been provided.\
+#       The configuration dicts contain %d variables." % num_of_vars)
+    #filter the dconfs that agree with the locked variables.
+    try:
+        ret_dconfs = filter(lambda dconf_dict:
+                            all(map(lambda key: dconf_dict[key] == locked_vars[key],
+                                    locked_vars.keys())),
+                            dconf_dicts)
+        if not ret_dconfs:
+            raise ValueError("The values specified in locked_vars of the JSON\
+            describing a function where not matched by any runs.")    
+    except KeyError as e:
+        raise Exception("Variable defined in locked_vars not found in configuration dicts: %s" %
+                        (e.args))
+    # Ensure that keys and vals are all strings
+    for ret_dconf in ret_dconfs:
+        for key in ret_dconf.keys():
+            ret_dconf[str(key)] = ret_dconf.pop(key)
+            ret_dconf[str(key)] = str(ret_dconf[str(key)])
+
+    # Sort the list of dictionaries according to free variable.
+    ret_dconfs.sort(key=operator.itemgetter(free_var))
+    try:
+        x_values = map(lambda ret_dconf: ret_dconf[free_var], ret_dconfs)
+        
+    except KeyError:
+        raise Exception("free_var argument given to %s function not found in dconf_dicts" %
+                        sys._getframe().f_code.co_name)
+    try:
+        y_values = map(lambda ret_dconf: ret_dconf[dep_var], ret_dconfs)
+    except KeyError:
+        raise Exception("dep_var argument given to %s function not found in dconf_dicts" %
+                        sys._getframe().f_code.co_name)
+    try:
+        y_uncs = map(lambda ret_dconf: ret_dconf[dep_unc], ret_dconfs)
+    except KeyError:
+        raise Exception("dep_unc argument given to %s function not found in dconf_dicts" %
+                        sys._getframe().f_code.co_name)
+
+    y_values_floats = map(lambda y: float(y), y_values)
+    y_unc_floats = map(lambda unc: float(unc), y_uncs)
     
+    if normalize_performance:
+        y_values_floats, y_unc_floats = _get_normalized_performance(y_values_floats,
+                                                                    y_unc_floats)
     
-# Testing occurs below this line. Specific dataset is needed for this to work.
-print("These benchmarks were found:")
-for benchmark in b.itervalues():
-    print(benchmark.name)
-lvc = b['OptionPricing']
-print(lvc)
-compn = lvc.implementations['cpp_openmp']
-var_names = get_var_names(compn)
-print("The static var names are:")
-print(var_names["static_configurations"])
-print("The dataset names are:")
-print(var_names["datasets"])
-print("The runtime variable's names are:")
-print(var_names["runtime_configurations"])
-print("The different values of NUM_THREADS are:")
-statistics = runtime_vs_real_types(sys.argv[1], 'OptionPricing', 'cpp_openmp', 'small', 2)
-print("FUNCTION RETURNS:")
-print(statistics)
-statistics1 = speed_up_vs_no_threads(sys.argv[1], 'OptionPricing', 'cpp_openmp',
-                                     'double', 'small')
-statistics2 = speed_up_vs_no_threads(sys.argv[1], 'OptionPricing', 'cpp_openmp',
-                                     'float', 'small')
-#print("2nd FUNCTION RETURNS:")
-#print(statistics)
-#bar_visualize_rt_vs_nt(statistics1, statistics2)
-export_runs(sys.argv[1], 'OptionPricing', 'cpp_openmp', 'export.json')
-export_dconfs(sys.argv[1], 'OptionPricing', 'cpp_openmp', 'export_dconfs.json')
+    try:
+        x_values_floats = map(lambda x: float(x), x_values)
+    except ValueError:
+        print("x-values not recognized as numbers.")
+        return x_values, y_values_floats, y_unc_floats
+    return x_values_floats, y_values_floats, y_unc_floats
+
+
+def draw_figure(x_vals, y_vals, y_uncs, fig_name, dep_var, free_var_name, fig_type):
+    """Draws a bar diagram with (x,y) points and uncertainties on the y-axis.
+    If dependent variable name (dep_var) is \"normalized\" performance, then 
+    the the values over the bars are written as floats with two decimals. 
+    Otherwise, they are written as ints.
+    """
+    def autolabel(rects):
+        for rect in rects:
+            height = float(rect.get_height())
+            if dep_var == "normalized performance":
+                ax.text(rect.get_x()+rect.get_width()/2., 1.05*height, '%.2f'%float(height),
+                        ha='center', va='bottom')
+            else:    
+                ax.text(rect.get_x()+rect.get_width()/2., 1.05*height, '%d'%int(height),
+                        ha='center', va='bottom')
+    N = len(x_vals)
+    x_vals = tuple(x_vals)
+    y_vals = tuple(y_vals)
+    y_uncs = tuple(y_uncs)
+    width = 0.35 #should probably be reciprocal of N
+    ind = np.arange(N) #What does this do?
+    fig, ax = plt.subplots() #What does this do?
+    if fig_type == "bar":
+        rects1 = ax.bar(ind, y_vals, width, color='r', yerr=y_uncs)
+    elif fig_type == "graph":
+        ax.plot(ind, y_vals, 'bo', ind, y_vals, 'k')
+        ax.errorbar(ind, y_vals, yerr=y_uncs)
+    else:
+        raise Exception("Unknown graph type requested")
+    # change color to a dynamic value. Could also be defined in JSON.
+    ax.set_ylabel(dep_var)
+    ax.set_xlabel(free_var_name)
+    title = fig_name
+    ax.set_title(title)
+    ax.set_xticks(ind + width/2)
+    ax.set_xticklabels(x_vals) #Maybe the number of these should be reduced?
+    #ax.legend(rects1, fig_name) # Other options?
+    if fig_type == "bar":
+        autolabel(rects1)
+    fig_filename = os.path.join(HIPERPRET_FOLDER, FIGURE_FOLDER_NAME, fig_name)
+    pylab.savefig(fig_filename, bbox_inches='tight')
+    
+
+    # Some modifications are needed if graphs with implementation names as indep. var
+    # is to be creatable.
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: %s <instantiation dir path>" % sys.argv[0])
+        exit(1)
+    instdir = sys.argv[1] #check that this is valid
+    if not os.path.isdir(instdir):
+        raise Exception("The instatiations dir must be a directory.")
+    export_folder = os.path.join(HIPERPRET_FOLDER, EXPORT_FOLDER_NAME)
+    figure_folder = os.path.join(HIPERPRET_FOLDER, FIGURE_FOLDER_NAME)
+    mkdir_p(export_folder)
+    mkdir_p(figure_folder)
+    benchmarks = os.listdir(instdir)
+    bms = []
+    for i in range(len(benchmarks)):
+        bms.append(get_benchmark_object(benchmarks[i], instdir))
+    for bm in bms:
+        for imp in bm.implementations.values():
+            filename_runs = EXPORT_DCONFS_FILENAME_PREPEND + bm.name + " " +  imp.name + ".json"
+            filename_runs = os.path.join(export_folder, filename_runs)
+            filename_dconfs = EXPORT_RUNS_FILENAME_PREPEND + bm.name + " " +  imp.name + ".json"
+            filename_dconfs = os.path.join(export_folder, filename_dconfs)
+            figure_def_filename = FIGURE_CONFIGURATION_FILENAME
+            export_runs(instdir, bm.name, imp.name, filename_runs)
+            export_dconfs(instdir, bm.name, imp.name, filename_dconfs)
+            dconf_dicts = get_dconf_dicts(bm.name, imp.name, instdir)
+            figure_definitions = read_json_file(figure_def_filename)
+            for figure_name, figure_vals in figure_definitions.items():
+                try:
+                    if not bm.name == figure_vals['benchmark_name']:
+                        continue
+                    if not imp.name == figure_vals['implementation_name']:
+                        continue
+                    fig_type = figure_vals['type']
+                    free_var_name = figure_vals['free_var']
+                    locked_vars = figure_vals['locked_vars']
+                    sticky = figure_vals['sticky']
+                    dep_var = figure_vals["dependent_var"]
+                except KeyError as e:
+                    print(e.args)
+                    raise Exception("KeyError in JSON file. Missing key from JSON: %s" %
+                                    figure_def_filename)
+                try:
+                    normalize_performance = bool(figure_vals["get normalized performance"])
+                except ValueError:
+                    raise Exception("The \"get normalized performance\" must be set to \"True\" of \"False\".")
+                try:
+                    retx, rety, rety_unc = get_2d_points_dconf_dicts(dconf_dicts,
+                                                                     free_var_name,
+                                                                     locked_vars,
+                                                                     normalize_performance,
+                                                                     dep_var)
+                except ValueError as e:
+                    print(e.args)
+                    raise Exception("Problem with definition of figure with name: %s." % figure_name)
+                if normalize_performance:
+                    dep_var = "normalized performance"
+                draw_figure(retx, rety, rety_unc, figure_name, dep_var, free_var_name, fig_type)

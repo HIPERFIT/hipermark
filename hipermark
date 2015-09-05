@@ -531,11 +531,11 @@ def run_case(results, inst, dataset, runtimeconf):
                 proc.stdin.close() # Make sure stdin EOFs.
                 proc.wait()
                 match = 1 ^ proc.returncode
+                rundata_dict[VALIDATION] = str(int(match))
             else:
                 result = read_json_file(resultfile)
                 expected = read_json_file(expected_output_file)
                 match = compare_json(result, expected)
-                # write to validation
                 rundata_dict[VALIDATION] = str(int(match))
             if match:
                 note_result(results,
