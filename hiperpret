@@ -712,9 +712,11 @@ if __name__ == "__main__":
                     print(e.args)
                     raise Exception("KeyError in JSON file. Missing key from JSON: %s" %
                                     figure_def_filename)
-                try:
-                    normalize_performance = bool(figure_vals["get normalized performance"])
-                except ValueError:
+                if figure_vals["get normalized performance"] == "True":
+                    normalize_performance = True
+                elif figure_vals["get normalized performance"] == "False":
+                    normalize_performance = False
+                else:
                     raise Exception("The \"get normalized performance\" must be set to \"True\" of \"False\".")
                 try:
                     retx, rety, rety_unc = get_2d_points_dconf_dicts(dconf_dicts,
