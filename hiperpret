@@ -80,6 +80,13 @@ def get_average_and_stddev (result_times):
     av = get_nth_moment(result_times, 1)
     return (av, math.sqrt(get_nth_moment(result_times, 2) - av**2))
 
+def string2bool(b_string):
+    if b_string.lower() == "false":
+        return False
+    if b_string.lower() == "true":
+        return True
+    raise ValueError("Invalid string to describe boolean value. Use True or False (case insensitive).")
+
 
 class Run:
     def __init__(self, benchmark,
@@ -306,7 +313,7 @@ class Implementation:
             if not os.path.isdir(sconf_dir):
                 raise Exception("The content of %s must be folders with names \
                 for static configurations (hash values).\
-                But %s is not a folder." % (run_outputdir, sconf_dir))
+                But %s is not a folder." % (RUN_OUTPUT_PATH, sconf_dir))
             # Here, the keys of the cases will be hash values.
             self.static_configs[sconf] = \
             Static_configuration(self.benchmark, self,
@@ -343,20 +350,6 @@ class Benchmark:
         """
         a = "benchmark: {0}".format(self.name)
         return a
-
-def get_run_values(run_dicts):
-    """For a given list of run_dicts (probably calculated from\
-    get_run_dicts), this function returns a dictionary where the keys are \
-    var_names and the values are a list that the respective run_dicts take.
-    """
-    first_dict = run_dicts[0]
-    for var in first_dict: # all variables
-        val = []
-        for d in run_dicts: # all dicts
-            if d[var] not in val:
-                val.append(d[var])
-        var_dict[var] = val.sort()
-    return var_dict
 
 #########################################################
 # Below this comment are the visualization functions    #
@@ -409,7 +402,6 @@ def get_statistics(dconfs):
     return map(_get_statistic, dconfs)
 
 
-
 def get_all_static_configs(implementation):
     sconfs = implementation.static_configs.values()
     return sconfs
@@ -432,7 +424,6 @@ def get_all_runs(dconfs):
     runs = map(lambda dconf: dconf.runs.values(), dconfs)
     runs = flatten_list(runs)
     return runs
-
 
 ### DICTIONARY CREATING FUNCTIONS
 def get_run_dicts(benchmark_name, implementation_name, instdir):
@@ -564,6 +555,7 @@ def get_2d_points_dconf_dicts(dconf_dicts,
         
     num_of_vars = len(dconf_dicts[0].keys())
     num_of_locked_vars = len(locked_vars.keys())
+    # The below check should probably be performed.
 #    if num_of_vars - num_of_locked_vars != 5:
 #       raise Exception("The wrong number of locked variables has been provided.\
 #       The configuration dicts contain %d variables." % num_of_vars)
@@ -623,11 +615,19 @@ def get_2d_points_dconf_dicts(dconf_dicts,
     return x_values_floats, y_values_floats, y_unc_floats
 
 
-def draw_figure(x_vals, y_vals, y_uncs, fig_name, dep_var, free_var_name, fig_type):
+def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_valss, y_valss, y_uncss):
     """Draws a bar diagram with (x,y) points and uncertainties on the y-axis.
     If dependent variable name (dep_var) is \"normalized\" performance, then 
     the the values over the bars are written as floats with two decimals. 
     Otherwise, they are written as ints.
+
+    Keyword arguments:
+    fig_name -- Name of figure. Only 1st name is printed.
+    legends -- list of legend names.
+    x_vals -- list of list of x values
+    y_vals -- as x but for dependent variable values
+    y_uncs -- uncertainty of y
+    dep_var -- name of dependent variable 
     """
     def autolabel(rects):
         for rect in rects:
@@ -638,95 +638,154 @@ def draw_figure(x_vals, y_vals, y_uncs, fig_name, dep_var, free_var_name, fig_ty
             else:    
                 ax.text(rect.get_x()+rect.get_width()/2., 1.05*height, '%d'%int(height),
                         ha='center', va='bottom')
-    N = len(x_vals)
-    x_vals = tuple(x_vals)
-    y_vals = tuple(y_vals)
-    y_uncs = tuple(y_uncs)
-    width = 0.35 #should probably be reciprocal of N
-    ind = np.arange(N) #What does this do?
+                
+    def check_for_valid_function_call():
+        """ Raises an exception if sticky graphs are non-uniform
+        """
+        no_of_graphs = len(legends)
+        dep_var_name0 = dep_var_names[0]
+        free_var_name0 = free_var_names[0]
+        fig_type0 = fig_types[0]
+        if not all(filter(lambda name: name == dep_var_name0, dep_var_names)):
+            raise Exception("Sticky functions called with non-uniform dependent variable names")
+        if not all(filter(lambda name: name == free_var_name0, free_var_names)):
+            raise Exception("Sticky functions called with non-uniform free variable variable names")
+        if not all(filter(lambda name: fig_type == fig_type0, fig_types)):
+            raise Exception("All sticky functions must have uniform types, either \"bar\" or \"graph\"")
+        return
+
+    check_for_valid_function_call()
+    color_codes = ['b', 'g', 'r', 'c', 'm', 'k', 'y']
+    no_of_graphs = len(legends)
     fig, ax = plt.subplots() #What does this do?
-    if fig_type == "bar":
-        rects1 = ax.bar(ind, y_vals, width, color='r', yerr=y_uncs)
-    elif fig_type == "graph":
-        ax.plot(ind, y_vals, 'bo', ind, y_vals, 'k')
-        ax.errorbar(ind, y_vals, yerr=y_uncs)
-    else:
-        raise Exception("Unknown graph type requested")
-    # change color to a dynamic value. Could also be defined in JSON.
     ax.set_ylabel(dep_var)
     ax.set_xlabel(free_var_name)
     title = fig_name
     ax.set_title(title)
-    #ax.legend(rects1, fig_name) # Other options?
-    if fig_type == "bar":
-        autolabel(rects1)
-        ax.set_xticks(ind + width/2)
-        ax.set_xticklabels(x_vals) #Maybe the number of these should be reduced?
-    else:
-        ax.set_xticks(ind)
-        ax.set_xticklabels(x_vals)
+    rects = ()
+    for i in range(no_of_graphs):
+        N = len(x_valss[i])
+        x_vals = tuple(x_valss[i])
+        y_vals = tuple(y_valss[i])
+        y_uncs = tuple(y_uncss[i])
+        width = float(3)/(N*no_of_graphs) #should probably be reciprocal to number of datapoints.
+        ind = np.arange(N) #What does this do?
+        if fig_types[i] == "bar":
+            rects1 = ax.bar(ind+i*width, y_vals, width, color = color_codes[i % len(color_codes)], yerr=y_uncs)
+            rects = rects + (rects1,)
+        elif fig_types[i] == "graph":
+            rects1 = ax.plot(ind, y_vals, 'bo', ind, y_vals, color = color_codes[i % len(color_codes)])
+            rects = rects + (rects1,)            
+            ax.errorbar(ind, y_vals, yerr=y_uncs)
+        else:
+            raise Exception("Unknown graph type requested: %s" % fig_type)
+        if fig_type == "bar":
+            autolabel(rects1) # Perhaps this should run for all sticky graphs?         
+            if i == 0:
+                ax.set_xticks(ind + no_of_graphs*width/2)
+                ax.set_xticklabels(x_vals) #Maybe the number of these should be reduced?
+        else:
+            if i == 0:
+                ax.set_xticks(ind)
+                ax.set_xticklabels(x_vals)
+    rects = [i[0] for i in rects]
+    ax.legend(tuple(rects), tuple(legends), loc='best' )
     fig_filename = os.path.join(HIPERPRET_FOLDER, FIGURE_FOLDER_NAME, fig_name)
     pylab.savefig(fig_filename, bbox_inches='tight')
-    
 
-    # Some modifications are needed if graphs with implementation names as indep. var
-    # is to be creatable.
+def export_files(bms, instdir):
+    """ Write information about runs and accumulated run data (dconf)
+        to the disk.
+    
+        Keyword arguments:
+        bms -- list of benchmarks
+        instdir -- Directory where hipermark has stored the results
+        """
+    export_folder = os.path.join(HIPERPRET_FOLDER, EXPORT_FOLDER_NAME)
+    mkdir_p(export_folder)        
+    for bm in bms:
+        for impl in bm.implementations.values():
+            filename_runs = os.path.join(export_folder,
+                                         EXPORT_DCONFS_FILENAME_PREPEND +
+                                         bm.name + " " +  impl.name + ".json")
+            filename_dconfs = os.path.join(export_folder,
+                                           EXPORT_RUNS_FILENAME_PREPEND +
+                                           bm.name + " " +  impl.name + ".json")
+            export_runs(instdir, bm.name, impl.name, filename_runs)
+            export_dconfs(instdir, bm.name, impl.name, filename_dconfs)
+        
+    
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: %s <instantiation dir path>" % sys.argv[0])
         exit(1)
-    instdir = sys.argv[1] #check that this is valid
+    instdir = sys.argv[1]
     if not os.path.isdir(instdir):
         raise Exception("The instatiations dir must be a directory.")
-    export_folder = os.path.join(HIPERPRET_FOLDER, EXPORT_FOLDER_NAME)
     figure_folder = os.path.join(HIPERPRET_FOLDER, FIGURE_FOLDER_NAME)
-    mkdir_p(export_folder)
     mkdir_p(figure_folder)
     benchmarks = os.listdir(instdir)
     bms = []
     for i in range(len(benchmarks)):
         bms.append(get_benchmark_object(benchmarks[i], instdir))
-    for bm in bms:
-        for imp in bm.implementations.values():
-            filename_runs = EXPORT_DCONFS_FILENAME_PREPEND + bm.name + " " +  imp.name + ".json"
-            filename_runs = os.path.join(export_folder, filename_runs)
-            filename_dconfs = EXPORT_RUNS_FILENAME_PREPEND + bm.name + " " +  imp.name + ".json"
-            filename_dconfs = os.path.join(export_folder, filename_dconfs)
-            figure_def_filename = FIGURE_CONFIGURATION_FILENAME
-            export_runs(instdir, bm.name, imp.name, filename_runs)
-            export_dconfs(instdir, bm.name, imp.name, filename_dconfs)
-            dconf_dicts = get_dconf_dicts(bm.name, imp.name, instdir)
-            figure_definitions = read_json_file(figure_def_filename)
-            for figure_name, figure_vals in figure_definitions.items():
+    export_files(bms, instdir)
+    figure_definitions = read_json_file(FIGURE_CONFIGURATION_FILENAME)
+    retxs = []; retys = []; rety_uncs = []; 
+    normalize_performances = []; fig_types = [];
+    free_var_names = []; dep_var_names = []; legends = []; figure_names = []
+    for figure_definition in figure_definitions:
+        figure_name, figure_vals = figure_definition.items()[0]
+        for bm in bms:
+            for imp in bm.implementations.values():
+                dconf_dicts = get_dconf_dicts(bm.name, imp.name, instdir) # bm, imp specific
                 try:
                     if not bm.name == figure_vals['benchmark_name']:
                         continue
                     if not imp.name == figure_vals['implementation_name']:
                         continue
+                    sticky = string2bool(figure_vals['sticky'])
+                    normalize_performance = string2bool(figure_vals["get normalized performance"])
                     fig_type = figure_vals['type']
                     free_var_name = figure_vals['free_var']
-                    locked_vars = figure_vals['locked_vars']
-                    sticky = figure_vals['sticky']
-                    dep_var = figure_vals["dependent_var"]
+                    dep_var_name = figure_vals["dependent_var"]
+                    locked_var = figure_vals['locked_vars'] #each element is a dict
+                    legend = figure_vals["legend"]
                 except KeyError as e:
                     print(e.args)
+                    print("Look at graph definitions for benchmark %s, implementation %s" %
+                          (bm.name, imp.name))
                     raise Exception("KeyError in JSON file. Missing key from JSON: %s" %
-                                    figure_def_filename)
-                if figure_vals["get normalized performance"] == "True":
-                    normalize_performance = True
-                elif figure_vals["get normalized performance"] == "False":
-                    normalize_performance = False
-                else:
-                    raise Exception("The \"get normalized performance\" must be set to \"True\" of \"False\".")
+                                    FIGURE_CONFIGURATION_FILENAME)
                 try:
                     retx, rety, rety_unc = get_2d_points_dconf_dicts(dconf_dicts,
                                                                      free_var_name,
-                                                                     locked_vars,
+                                                                     locked_var,
                                                                      normalize_performance,
-                                                                     dep_var)
+                                                                     dep_var_name) #append again
                 except ValueError as e:
                     print(e.args)
-                    raise Exception("Problem with definition of figure with name: %s." % figure_name)
+                    # thrown within get_2d_points_dconf_dicts
+                    raise Exception("Problem with definition of figure with name: %s." %
+                                    figure_name)
+                retxs.append(retx); retys.append(rety); rety_uncs.append(rety_unc)
+                figure_names.append(figure_name)
+                normalize_performances.append(normalize_performance)
+                fig_types.append(fig_type)
+                free_var_names.append(free_var_name)
+                dep_var_names.append(dep_var_name)
+                legends.append(legend)
                 if normalize_performance:
-                    dep_var = "normalized performance"
-                draw_figure(retx, rety, rety_unc, figure_name, dep_var, free_var_name, fig_type)
+                    dep_var = "normalized performance" #unflexible
+                if sticky:
+                    continue
+                draw_figure(figure_names[0], legends, dep_var_names, free_var_names,
+                            fig_types, retxs, retys, rety_uncs)
+                retxs = []; retys = []; rety_uncs = [];
+                normalize_performances = []; fig_types = [];
+                free_var_names = []; dep_var_names = []; legends = [];
+                figure_names = []
+    if retxs:
+        draw_figure(figure_names[0], legends, dep_var_names, free_var_names,
+                    fig_types, retxs, retys, rety_uncs)
+
+            
