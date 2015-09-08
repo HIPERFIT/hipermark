@@ -577,8 +577,12 @@ def get_2d_points_dconf_dicts(dconf_dicts,
             ret_dconf[str(key)] = ret_dconf.pop(key)
             ret_dconf[str(key)] = str(ret_dconf[str(key)])
 
-    # Sort the list of dictionaries according to free variable.
-    ret_dconfs.sort(key=operator.itemgetter(free_var))
+    # Sort the list of dictionaries according to free variable. Incorrect for large ints.
+    try:
+        ret_dconfs = sorted(ret_dconfs, key=lambda k: float(k[free_var]))         
+    except:
+        print("String sorted") #DEV
+        ret_dconfs.sort(key=operator.itemgetter(free_var))
     try:
         x_values = map(lambda ret_dconf: ret_dconf[free_var], ret_dconfs)
         
@@ -668,8 +672,9 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
         x_vals = tuple(x_valss[i])
         y_vals = tuple(y_valss[i])
         y_uncs = tuple(y_uncss[i])
-        width = float(3)/(N*no_of_graphs) #should probably be reciprocal to number of datapoints.
-        ind = np.arange(N) #What does this do?
+        # only used by bar
+        width = float(3.5)/(N*no_of_graphs) #should probably be reciprocal to number of datapoints. Only used 
+        ind = np.arange(N) # Should be set to the x values.
         if fig_types[i] == "bar":
             rects1 = ax.bar(ind+i*width, y_vals, width, color = color_codes[i % len(color_codes)], yerr=y_uncs)
             rects = rects + (rects1,)
@@ -679,6 +684,10 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
             ax.errorbar(ind, y_vals, yerr=y_uncs)
         else:
             raise Exception("Unknown graph type requested: %s" % fig_type)
+        if N > 10:
+            ind = np.arange(0, N + round(N/10), round(N/10))
+            x_vals = tuple(np.arange(min(x_vals), round(max(x_vals)),
+                                     round((max(x_vals) - min(x_vals))/11)))
         if fig_type == "bar":
             autolabel(rects1) # Perhaps this should run for all sticky graphs?         
             if i == 0:
