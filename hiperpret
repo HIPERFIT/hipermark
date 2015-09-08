@@ -628,10 +628,11 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
     Keyword arguments:
     fig_name -- Name of figure. Only 1st name is printed.
     legends -- list of legend names.
-    x_vals -- list of list of x values
-    y_vals -- as x but for dependent variable values
-    y_uncs -- uncertainty of y
-    dep_var -- name of dependent variable 
+    dep_var_names -- list of dependent variable name. Must all agree. (1 per graph)
+    free_var_names -- list of independent variable name. Must all agree.(1 per graph) 
+    x_valss -- list of list of x values
+    y_valss -- as x but for dependent variable values
+    y_uncss -- structure as x, uncertainty of y
     """
     def autolabel(rects):
         for rect in rects:
@@ -647,6 +648,10 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
         """ Raises an exception if sticky graphs are non-uniform
         """
         no_of_graphs = len(legends)
+        if no_of_graphs > len(color_codes):
+            print("Warning: Only %d different colors exist.\
+            %d different graphs requested for one figure." %
+                  (len(color_codes), no_of_graphs))
         dep_var_name0 = dep_var_names[0]
         free_var_name0 = free_var_names[0]
         fig_type0 = fig_types[0]
@@ -658,25 +663,33 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
             raise Exception("All sticky functions must have uniform types, either \"bar\" or \"graph\"")
         return
 
-    check_for_valid_function_call()
+    def collapse_x_axis_labels(N, x_vals):
+        ind = np.arrange(0, N + round(N/10), round(N/10) )
+        x_vals = tuple(np.arange(min(x_vals), round(max(x_vals)) + round((max(x_vals) - min(x_vals))/11), ))
+        return ind, x_vals
+
+    def set_figure_names(ax):
+        ax.set_ylabel(dep_var)
+        ax.set_xlabel(free_var_name)
+        ax.set_title(fig_name)
+
     color_codes = ['b', 'g', 'r', 'c', 'm', 'k', 'y']
+    check_for_valid_function_call()    
     no_of_graphs = len(legends)
-    fig, ax = plt.subplots() #What does this do?
-    ax.set_ylabel(dep_var)
-    ax.set_xlabel(free_var_name)
-    title = fig_name
-    ax.set_title(title)
+    N = len(x_valss[0]) #assumed the same for all graphs
+    bar_width = float(3.5)/(N*no_of_graphs)   
+    fig, ax = plt.subplots()
+    set_figure_names(ax)
     rects = ()
     for i in range(no_of_graphs):
+        # in case the different graphs contain different number of vals (unlikely)
         N = len(x_valss[i])
         x_vals = tuple(x_valss[i])
         y_vals = tuple(y_valss[i])
         y_uncs = tuple(y_uncss[i])
-        # only used by bar
-        width = float(3.5)/(N*no_of_graphs) #should probably be reciprocal to number of datapoints. Only used 
-        ind = np.arange(N) # Should be set to the x values.
+        ind = np.arange(N) # Could be set to the x values. But these are not always numericals.
         if fig_types[i] == "bar":
-            rects1 = ax.bar(ind+i*width, y_vals, width, color = color_codes[i % len(color_codes)], yerr=y_uncs)
+            rects1 = ax.bar(ind+i*bar_width, y_vals, bar_width, color = color_codes[i % len(color_codes)], yerr=y_uncs)
             rects = rects + (rects1,)
         elif fig_types[i] == "graph":
             rects1 = ax.plot(ind, y_vals, 'bo', ind, y_vals, color = color_codes[i % len(color_codes)])
@@ -685,14 +698,12 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
         else:
             raise Exception("Unknown graph type requested: %s" % fig_type)
         if N > 10:
-            ind = np.arange(0, N + round(N/10), round(N/10))
-            x_vals = tuple(np.arange(min(x_vals), round(max(x_vals)),
-                                     round((max(x_vals) - min(x_vals))/11)))
+            ind, x_vals = collapse_x_axis_labels(N, x_vals)
         if fig_type == "bar":
-            autolabel(rects1) # Perhaps this should run for all sticky graphs?         
+            autolabel(rects1)
             if i == 0:
-                ax.set_xticks(ind + no_of_graphs*width/2)
-                ax.set_xticklabels(x_vals) #Maybe the number of these should be reduced?
+                ax.set_xticks(ind + no_of_graphs*bar_width/2)
+                ax.set_xticklabels(x_vals)
         else:
             if i == 0:
                 ax.set_xticks(ind)
@@ -715,13 +726,21 @@ def export_files(bms, instdir):
     for bm in bms:
         for impl in bm.implementations.values():
             filename_runs = os.path.join(export_folder,
-                                         EXPORT_DCONFS_FILENAME_PREPEND +
+                                         EXPORT_RUNS_FILENAME_PREPEND +
                                          bm.name + " " +  impl.name + ".json")
             filename_dconfs = os.path.join(export_folder,
-                                           EXPORT_RUNS_FILENAME_PREPEND +
+                                           EXPORT_DCONFS_FILENAME_PREPEND +
                                            bm.name + " " +  impl.name + ".json")
             export_runs(instdir, bm.name, impl.name, filename_runs)
             export_dconfs(instdir, bm.name, impl.name, filename_dconfs)
+
+# def get_figure_configurations():
+#     # get the list of filepaths of JSONs that represent figure definitions.
+#     # Iterate through that?
+#     # Return a list of dictionaries where each element represents a figure.
+#     # Each key within each element represents a graph to be printed in the same figure.
+#     # Each key within an element in the list is the legend of the graph.
+#     # The filename of the specific JSON file will be the filename of the figure when stored on PC.
         
     
 if __name__ == "__main__":
