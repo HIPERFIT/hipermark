@@ -9,7 +9,7 @@ import numpy as np
 import pylab #
 import operator #used for sorting
 import errno
-
+from scipy.stats import t # Student's T distribution
 
 # These files are read, not written.
 RESULT_FILENAME = "result.json"
@@ -35,6 +35,14 @@ TIMESTAMP_END = "timestamp_end"
 RETURN_CODE = "return_code"
 VALIDATION = "validation"
 RUNTIME = "runtime"
+
+# Numerical constants
+CONFIDENCE_LEVEL = 0.95
+
+
+#########################################################
+#                Various help functions                 #
+#########################################################
 
 def mkdir_p(path):
     """Makes a directory and all non-existing directories needed to contain this directory 
@@ -71,14 +79,27 @@ def get_nth_moment (result_times, n):
     powers = map(lambda x: x**n, result_times)
     return sum(powers)/float(len(result_times))
 
-def get_average_and_stddev (result_times):
-    """ Returns average and stddev for a list.
+def get_mean_and_unc(result_times):
+    """ Returns mean and uncertainty of mean for a list.
 
     Keyword values:
     result_times -- list of result times (floats)
+
+    return values:
+    sample_mean -- the observed mean
+    unc -- The uncertainty according to Student's T distribution
     """
-    av = get_nth_moment(result_times, 1)
-    return (av, math.sqrt(get_nth_moment(result_times, 2) - av**2))
+    N = len(result_times)
+    sample_mean = get_nth_moment(result_times, 1)
+    sample_variance = sum([x**2-sample_mean**2 for x in result_times])/float(N - 1)
+    estimated_std_err = math.sqrt(sample_variance) / math.sqrt(N)
+    interval = t.interval(CONFIDENCE_LEVEL,
+                          N - 1,
+                          loc = sample_mean,
+                          scale = estimated_std_err)
+    unc = (interval[1] - interval[0])/2
+    return (sample_mean, unc)
+
 
 def string2bool(b_string):
     if b_string.lower() == "false":
@@ -87,6 +108,9 @@ def string2bool(b_string):
         return True
     raise ValueError("Invalid string to describe boolean value. Use True or False (case insensitive).")
 
+#########################################################
+#     Class Definitions for Benchmark Descriptions      #
+#########################################################
 
 class Run:
     def __init__(self, benchmark,
@@ -352,15 +376,13 @@ class Benchmark:
         return a
 
 #########################################################
-# Below this comment are the visualization functions    #
-# which parse the data collected in the objects whose   #
-# classes are defined above                             #
+# Visualization functions for interpreting the objects  #
+#             defined in the classes above              #
 #########################################################
 
-## VISUALIZATION HELPER FUNCTIONS
 def get_benchmark_object(benchmark_name, instdir):
     if not os.path.isdir(instdir):
-        raise Exception("Directory %s could not be found." % sys.argv[1])
+        raise Exception("Directory %s could not be found." % instdir)
     dircontents = os.listdir(instdir)
     b = {}
     rootdir = os.getcwd()
@@ -387,21 +409,6 @@ def get_implementation_object(benchmark, implementation_name):
         %s" %(implementation_name))
     return implementation
 
-def get_statistics(dconfs):
-    """ Returns a list of tuples where tuple[0] = av, tuple[1] = std_dev,
-        tuple[2] = uncertainty on average."""
-    def _get_statistic(dconf):
-        """Given one dynamic configuration, this function returns the average,
-            standard deviation, and the uncertainty of the av."""
-        N = dconf.number_of_runs
-        runtimes = map(lambda run: run.runtime, dconf.runs.itervalues())
-        av, std_dev = get_average_and_stddev(runtimes)
-        uncertainty = std_dev/math.sqrt(N)
-        return av, std_dev, uncertainty
-    
-    return map(_get_statistic, dconfs)
-
-
 def get_all_static_configs(implementation):
     sconfs = implementation.static_configs.values()
     return sconfs
@@ -425,8 +432,10 @@ def get_all_runs(dconfs):
     runs = flatten_list(runs)
     return runs
 
-### DICTIONARY CREATING FUNCTIONS
 def get_run_dicts(benchmark_name, implementation_name, instdir):
+    """ Given an implementation, this function returns a list of dictionaries
+    where each element describes a specific run.
+    """
     def _generate_json(run):
         run_data = {}
         run_data['benchmark_name'] = run.benchmark.name
@@ -441,7 +450,6 @@ def get_run_dicts(benchmark_name, implementation_name, instdir):
         run_data['ts_start'] = run.ts_start
         run_data['ts_end'] = run.ts_end
         return run_data
-
     benchmark = get_benchmark_object(benchmark_name, instdir)
     implementation = get_implementation_object(benchmark, implementation_name)
     sconfs = get_all_static_configs(implementation)
@@ -452,11 +460,9 @@ def get_run_dicts(benchmark_name, implementation_name, instdir):
     return dicts
 
 def get_dconf_dicts(benchmark_name, implementation_name, instdir):
-    """Given an implementation, this function exports all data generated by
-    hipermark to a JSON file specified by the user. The exported data is a list
-    of all hipermark generated data from each configuration and thus also
-    contains average, standard deviation and uncertainty if more than one run
-    for a given configuration has been made
+    """Given an implementation, this function generates a list of dictionaries
+    where each element describes a dynamic configuration for that
+    implementation.
     """
     def belongs_to_dconf(configuration, run_dict):
         for key in configuration:
@@ -490,13 +496,12 @@ def get_dconf_dicts(benchmark_name, implementation_name, instdir):
                                 str(run_dict))
             run_times.append(run_dict['runtime'])
         N = len(run_times)
-        av, stddev = get_average_and_stddev(run_times)
-        configuration['average runtime'] = av # This key should perhaps be args from func. call
-        configuration['std_dev'] = stddev
+        mean, mean_uncertainty = get_mean_and_unc(run_times)
+        configuration['mean runtime'] = mean
+        configuration['mean runtime uncertainty'] = mean_uncertainty
         configuration['number_of_runs'] = N
-        configuration['uncertainty_of_runtime'] = stddev/math.sqrt(N) # args from func call?
         return
-
+    
     benchmark = get_benchmark_object(benchmark_name, instdir)
     implementation = get_implementation_object(benchmark, implementation_name)
     sconfs = get_all_static_configs(implementation)
@@ -508,32 +513,13 @@ def get_dconf_dicts(benchmark_name, implementation_name, instdir):
         set_statistics_for_dconf(config, run_dicts)
     return configurations
 
-
-### EXPORT FUNCTIONS
-def export_runs(instdir, benchmark_name, implementation_name, filename):
-    """Given an implementation, this function exports all data generated by
-    hipermark to a JSON file specified by the user. The exported data is a list
-    of all hipermark generated data from each run.
-    """   
-    run_dicts = get_run_dicts(benchmark_name, implementation_name, instdir)
-    with open(filename, "w") as fp:
-        ret = fp.write(json.dumps(run_dicts))
-    return ret
-
-def export_dconfs(instdir, benchmark_name, implementation_name, filename):
-    dconf_dicts = get_dconf_dicts(benchmark_name, implementation_name, instdir)
-    with open(filename, "w") as fp:
-        ret = fp.write(json.dumps(dconf_dicts))
-    return ret
-
-
 ### FUNCTION THAT GENERATES POINTS IN 2-D
 def get_2d_points_dconf_dicts(dconf_dicts,
                               free_var,
                               locked_vars,
                               normalize_performance,
-                              dep_var = "average runtime",
-                              dep_unc = 'uncertainty_of_runtime'):
+                              dep_var = "mean runtime",
+                              dep_unc = 'mean runtime uncertainty'):
     """Given dicts that describe configurations, this function returns three
     lists. One representing x point, one y points, and one uncertainties on the
     y-axis.
@@ -567,10 +553,11 @@ def get_2d_points_dconf_dicts(dconf_dicts,
                             dconf_dicts)
         if not ret_dconfs:
             raise ValueError("The values specified in locked_vars of the JSON\
-            describing a function where not matched by any runs.")    
+            describing a function were not matched by any runs.")    
     except KeyError as e:
-        raise Exception("Variable defined in locked_vars not found in configuration dicts: %s" %
-                        (e.args))
+        raise Exception("Variable defined in locked_vars not found in\
+        configuration dicts: %s" % (e.args))
+    
     # Ensure that keys and vals are all strings
     for ret_dconf in ret_dconfs:
         for key in ret_dconf.keys():
@@ -610,7 +597,7 @@ def get_2d_points_dconf_dicts(dconf_dicts,
     try:
         x_values_floats = map(lambda x: float(x), x_values)
     except ValueError:
-        print("x-values not recognized as numbers in this configuration:")
+        print("Warning: x-values not recognized as numbers in this configuration:")
         try:
             print(str(ret_dconfs[0]['benchmark_name']), str(ret_dconfs[0]['implementation_name']))
         except:
@@ -620,9 +607,9 @@ def get_2d_points_dconf_dicts(dconf_dicts,
 
 
 def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_valss, y_valss, y_uncss):
-    """Draws a bar diagram with (x,y) points and uncertainties on the y-axis.
+    """Draws n bar diagrams or n graphs in one figure.
     If dependent variable name (dep_var) is \"normalized\" performance, then 
-    the the values over the bars are written as floats with two decimals. 
+    the values over the bars are written as floats with two decimals. 
     Otherwise, they are written as ints.
 
     Keyword arguments:
@@ -715,12 +702,29 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
 
 def export_files(bms, instdir):
     """ Write information about runs and accumulated run data (dconf)
-        to the disk.
+    to the disk.
     
-        Keyword arguments:
-        bms -- list of benchmarks
-        instdir -- Directory where hipermark has stored the results
-        """
+    Keyword arguments:
+    bms -- list of benchmarks
+    instdir -- Directory where hipermark has stored the results
+    """
+    def _export_runs(instdir, benchmark_name, implementation_name, filename):
+        """Given an implementation, this function exports all data generated by
+        hipermark to a JSON file specified by the user. The exported data is a list
+        of all hipermark generated data from each run.
+        """   
+        run_dicts = get_run_dicts(benchmark_name, implementation_name, instdir)
+        with open(filename, "w") as fp:
+            ret = fp.write(json.dumps(run_dicts))
+        return ret
+
+    # Add average runtime to these.
+    def _export_dconfs(instdir, benchmark_name, implementation_name, filename):
+        dconf_dicts = get_dconf_dicts(benchmark_name, implementation_name, instdir)
+        with open(filename, "w") as fp:
+            ret = fp.write(json.dumps(dconf_dicts))
+            return ret
+        
     export_folder = os.path.join(HIPERPRET_FOLDER, EXPORT_FOLDER_NAME)
     mkdir_p(export_folder)        
     for bm in bms:
@@ -731,8 +735,8 @@ def export_files(bms, instdir):
             filename_dconfs = os.path.join(export_folder,
                                            EXPORT_DCONFS_FILENAME_PREPEND +
                                            bm.name + " " +  impl.name + ".json")
-            export_runs(instdir, bm.name, impl.name, filename_runs)
-            export_dconfs(instdir, bm.name, impl.name, filename_dconfs)
+            _export_runs(instdir, bm.name, impl.name, filename_runs)
+            _export_dconfs(instdir, bm.name, impl.name, filename_dconfs)
 
 # def get_figure_configurations():
 #     # get the list of filepaths of JSONs that represent figure definitions.
@@ -742,7 +746,6 @@ def export_files(bms, instdir):
 #     # Each key within an element in the list is the legend of the graph.
 #     # The filename of the specific JSON file will be the filename of the figure when stored on PC.
         
-    
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: %s <instantiation dir path>" % sys.argv[0])
