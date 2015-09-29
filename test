@@ -1,0 +1,179 @@
+#!/usr/bin/env python
+import os
+import json
+import math
+import time
+from scipy.stats import t
+import getopt, sys
+
+def main():
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "ho:v", ["help", "output="])
+    except getopt.GetoptError as err:
+        # print help information and exit:
+        print str(err) # will print something like "option -a not recognized"
+        #usage()
+        sys.exit(2)
+    output = None
+    verbose = False
+    for o, a in opts:
+        if o == "-v":
+            verbose = True
+        elif o in ("-h", "--help"):
+            #usage()
+            print("usage")
+            sys.exit()
+        elif o == "--output":
+            output = a
+        else:
+            assert False, "unhandled option"
+
+if __name__ == "__main__":
+    main()
+
+
+# dict4 = {}
+# dict4[('1','2','3')]= "onetwothree"
+# print(('1','2','3') in dict4.keys())
+# print(('1','2','4') in dict4.keys())
+
+# def read_json_file(filename):
+#     """ returns an array containing the content of the JSON file.
+
+#     keyword arguments:
+#     filename -- name of json file to interpret
+#     """
+#     with open(filename, "r") as file:
+#         return json.loads(file.read())
+
+# def get_nth_moment (result_times, n):
+#     """ 
+#     Calculates the nth moment of a list.
+
+#     Keyword values:
+#     result_times -- list of result times (floats)
+#     n -- integer describing that statistical moment of result_times which is returned
+#     """
+#     suml = 0
+#     N = len(result_times)
+#     for i in range(N):
+#         suml += result_times[i]**n
+#     return (suml/float(N))
+
+# def get_average_and_stddev_alt(result_times):
+#     avg = 0
+#     N = len(result_times)
+#     for i in range(N):
+#         avg += result_times[i]
+#     avg = avg/float(N)
+#     std_dev = 0
+#     for i in range(N):
+#         std_dev += (result_times[i]-avg)**2
+#     std_dev = math.sqrt(std_dev/float(N))
+#     return (avg, std_dev)
+
+# def get_average_and_stddev (result_times):
+#     """ Returns average and stddev for a list.
+
+#     Keyword values:
+#     result_times -- list of result times (floats)
+#     """
+#     av = get_nth_moment(result_times, 1)
+#     return (av, math.sqrt(get_nth_moment(result_times, 2) - av**2))
+
+# def get_average_and_var_alt(result_times):
+#     avg = 0
+#     N = len(result_times)
+#     for i in range(N):
+#         avg += result_times[i]
+#     avg = avg/N
+#     std_dev = 0
+#     for i in range(N):
+#         std_dev = (result_times[i]-avg)**2
+#     std_dev = std_dev/N
+#     return (avg, std_dev)
+
+# def get_average_and_var (result_times):
+#     """ Returns average and stddev for a list.
+
+#     Keyword values:
+#     result_times -- list of result times (floats)
+#     """
+#     av = get_nth_moment(result_times, 1)
+#     return (av, get_nth_moment(result_times, 2) - av**2)
+
+# a = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
+# av1, stddev1 = get_average_and_stddev(a)
+# av2, stddev2 = get_average_and_stddev_alt(a)
+# av3, var3 = get_average_and_var(a)
+# av4, var4 = get_average_and_var_alt(a)
+
+
+
+# print("standard: (%.2E, %.2E), alt: (%.2E, %.2E)" % (av1, stddev1, av2, stddev2))
+# print("standard: (%.2E, %.2E), alt: (%.2E, %.2E)" % (av3, var3, av4, var4))
+# print("1st moment: %.2E" % get_nth_moment(a, 1))
+# e = get_nth_moment(a, 2)
+# print("2nd moment: %.2E" % e)
+# d = math.sqrt(e)
+# print("sqrt 2nd moment: %.2E" % d)
+# f = (e - get_nth_moment(a, 1)**2)
+# print("2nd mom. minus av. squared: %.2E" % f)
+# print("sqrt. above %.2E" % math.sqrt(f))
+# dircontents = os.listdir(os.getcwd())
+# print(dircontents)
+# a = os.path.normpath(dircontents[0])
+# b = os.path.normpath(dircontents[1])
+# print(a)
+# print(os.path.isdir(a))
+# print(b)
+# print(os.path.isdir(b))
+# isdir = os.path.isdir("/home/thor/Documents/Uni/hiperfit/finpar/lib")
+# print("isdir is: %s" % isdir)
+# isdir2 = os.path.isdir("/home/thor/Documents/Uni/hiperfit/finpar/test123.txt")
+# print("os.path.isdir called on non existent path returns %s." % isdir2)
+# print("dircontents[0] is %s " % dircontents[0])
+# print(int("5\n\r"))
+# print(os.path.basename(os.path.normpath(os.getcwd())))
+
+# ts = time.time()
+# print(ts)
+
+# ## TEST MAP FUNCTIONS
+
+# a = [1,2,3,4,5]
+# b = [x**2 for x in a]
+# print(a)
+# print(b)
+
+# dict1 = {'1':'a', '2':'b'}
+# dict2 = {'3':'c', '4':'d'}
+# dict1.update(dict2)
+# print(dict1)
+
+
+# ## STATISTICAL FUNCTION
+# def get_mean_and_unc(result_times):
+#     """ Returns mean and uncertainty of mean for a list.
+
+#     Keyword values:
+#     result_times -- list of result times (floats)
+#     """
+#     N = len(result_times)
+#     sample_mean = get_nth_moment(result_times, 1)
+#     sample_variance = sum([x**2-sample_mean**2 for x in result_times])/float(N - 1)
+#     estimated_std_err = math.sqrt(sample_variance) / math.sqrt(N)
+#     interval = t.interval(0.95, N - 1, loc = sample_mean, scale = estimated_std_err)
+#     unc = (interval[1] - interval[0])/2
+#     return (sample_mean, unc)
+
+# a = t.interval(0.95, 10 - 1, loc = 5, scale = 10)
+# print(a)
+# print(a[0])
+# obs = [2,3,5,6,9]
+# mean, unc, interval = get_mean_and_unc(obs)
+
+# print("observed data: ", obs)
+# print("mean is: ", mean)
+# print("unc is: ", unc)
+# print("interval is: ", interval)

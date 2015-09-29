@@ -753,8 +753,9 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
 #     # Each key within each element represents a graph to be printed in the same figure.
 #     # Each key within an element in the list is the legend of the graph.
 #     # The filename of the specific JSON file will be the filename of the figure when stored on PC.
+# See the test file in this folder for how to handle command line arguments.
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) < 2:
         print("Usage: %s <instantiation dir path>" % sys.argv[0])
         exit(1)
     instdir = sys.argv[1]
