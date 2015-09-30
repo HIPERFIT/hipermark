@@ -5,14 +5,33 @@ import math
 import time
 from scipy.stats import t
 import getopt, sys
+import re
+import numpy as np
 
+a = [1,2,3,4,5,6,7,8,9]
+print(a[-1])
+
+print(np.asarray(tuple(a)))
+
+print(type(5))
+print(type(5) == int)
+ind = np.arange(10)
+#ind2 = np.arange('1', '2')
+print(type(ind))
+print(ind)
+#print(ind2)
+
+url = "abcde.com"
+url = re.sub('\\.com$', '', url)
+print(url)
 
 def main():
     try:
         # In the list, the long options are defined.
         # In the string (2nd argument), the options are listed as a string.
         # The options that require an argument are followed by a colon.
-        opts, args = getopt.getopt(sys.argv[1:], "ho:vd:", ["help", "output="])
+        opts, args = getopt.getopt(sys.argv[1:], "d:o:", ["help", "output="])
+        i = 0
     except getopt.GetoptError as err:
         # print help information and exit:
         print str(err) # will print something like "option -a not recognized"
@@ -23,9 +42,12 @@ def main():
     direction = ''
     for o, a in opts:
         if o == "-d":
-            direction = a
+            if i == 0:
+                direction = []
+            i += 1
+            direction.append(a)
             print("direction=")
-            print(a)
+            print(direction)
         elif o == "-v":
             verbose = True
         elif o in ("-h", "--help"):
