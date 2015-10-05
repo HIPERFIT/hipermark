@@ -5,8 +5,8 @@ The uncertainties in Hiperpret are calculated from Student's T distribution.
 The function get_mean_and_unc in hiperpret takes a list (array) as input and returns a mean and an uncertainty.
 
 It calculates the following:
-1. number of measurements ($N$)
-2. sample mean ($sm$)
+1. number of measurements ($$N$$)
+2. sample mean ($$sm$$)
 3. sample variance ($sv = sum_i((X_i-<X>)^2)/(N-1)$)
 4. estimated standard error ($ese = sv/sqrt(N)$)
 5. confidence interval ($i = t.interval(confidence_level, N-1, sm, ese$))[1]
