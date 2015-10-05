@@ -95,11 +95,11 @@ def get_mean_and_unc(result_times):
     """
     N = len(result_times)
     sample_mean = get_nth_moment(result_times, 1)
-    sample_variance = sum([x**2-sample_mean**2 for x in result_times])/float(N - 1)
-    # since the uncertainty in each measurement is up to 1 ms, the
-    # sample_variance should never go below 1/sqrt(N).
-    if sample_variance < 1/math.sqrt(N):
-        sample_variance = 1/math.sqrt(N)
+    sample_variance = sum([(x - sample_mean)**2 for x in result_times])/float(N - 1)
+    # since the uncertainty in each measurement is 0.5 ms, the
+    # sample_variance should never go below 0.5/sqrt(N).
+    if sample_variance < 0.5/math.sqrt(N):
+        sample_variance = 0.5/math.sqrt(N)
     estimated_std_err = math.sqrt(sample_variance) / math.sqrt(N)
     interval = t.interval(CONFIDENCE_LEVEL,
                           N - 1,
@@ -107,7 +107,6 @@ def get_mean_and_unc(result_times):
                           scale = estimated_std_err)
     unc = (interval[1] - interval[0])/2
     return (sample_mean, unc)
-
 
 def string2bool(b_string):
     if b_string.lower() == "false":
@@ -206,6 +205,10 @@ class Dynamic_configuration:
             print("Error reading JSON")
             print(e.args)
             raise Exception("Error reading JSON file %s", dconf_filename)
+            # Casting to string, experimental (Oct 5, 2015)        
+        for key, value in self.configuration.iteritems():
+            self.configuration[str(key)] = self.configuration.pop(key)
+            self.configuration[str(key)] = str(value)
         dircontents = os.listdir(self.directory)
         for run in dircontents:
             if run == DYNAMIC_CONFIGURATION_FILENAME:
@@ -500,7 +503,7 @@ def get_dconf_dicts(benchmark_name, implementation_name, instdir):
         for run_dict in run_dicts_of_dconf:
             if (run_dict['validation'] != 1) or (run_dict['retcode'] != 0):
                 raise Exception("Non-validated run encountered in the attempt \
-                to export a JSON each configuration. Stopped. Error found in:",\
+                to create a JSON for each configuration. Stopped. Error found in:",\
                                 str(run_dict))
             run_times.append(run_dict['runtime'])
         N = len(run_times)
@@ -587,7 +590,7 @@ def get_2d_points_dconf_dicts(dconf_dicts,
         # unc_f(x) = unc_x*f'(x)
         unc_perf = map(lambda unc, runtime: norm_const*unc / runtime**2, uncs, runtimes)
         return performance, unc_perf        
-        
+
     num_of_vars = len(dconf_dicts[0].keys())
     num_of_locked_vars = len(locked_vars.keys())
     # The below check should probably be performed.
@@ -597,7 +600,7 @@ def get_2d_points_dconf_dicts(dconf_dicts,
     #filter the dconfs that agree with the locked variables.
     try:
         ret_dconfs = filter(lambda dconf_dict:
-                            all(map(lambda key: dconf_dict[key] == locked_vars[key],
+                            all(map(lambda key: dconf_dict[str(key)] == locked_vars[str(key)],
                                     locked_vars.keys())),
                             dconf_dicts)
         if not ret_dconfs:
@@ -620,7 +623,6 @@ def get_2d_points_dconf_dicts(dconf_dicts,
         ret_dconfs.sort(key=operator.itemgetter(free_var))
     try:
         x_values = map(lambda ret_dconf: ret_dconf[free_var], ret_dconfs)
-        
     except KeyError:
         raise Exception("free_var argument given to %s function not found in dconf_dicts" %
                         sys._getframe().f_code.co_name)
@@ -776,59 +778,62 @@ if __name__ == "__main__":
             else:
                 print("unhandled option given as command line argument: %s", o)
                 assert False
+        if not os.path.isdir(instdir):
+            raise Exception("The instatiations dir must be a directory.")
         return instdir, figure_definition_filenames, export_folder
 
+    def _get_all_benchmark_objects(instdir):
+            benchmarks = os.listdir(instdir)
+            bms = [];
+            for benchmark in benchmarks:
+                bms.append(get_benchmark_object(benchmark, instdir))
+            return bms
+
+    def _get_all_dconf_dicts(bms):
+        dconf_dicts = []
+        for bm in bms:
+            for imp in bm.implementations.values():
+                dconf_dicts.append(get_dconf_dicts(bm.name, imp.name, instdir))
+        return flatten_list(dconf_dicts)
 
     instdir, figure_definition_filenames, export_folder = _parse_sysarg(sys.argv[1:])
-    if not os.path.isdir(instdir):
-        raise Exception("The instatiations dir must be a directory.")
     figure_folder = os.path.join(export_folder, FIGURE_FOLDER_NAME)
     export_json_folder = os.path.join(export_folder, EXPORT_JSON_FOLDER_NAME)
     mkdir_p(figure_folder); mkdir_p(export_json_folder)
-    benchmarks = os.listdir(instdir)
-    bms = []
-    for benchmark in benchmarks:
-        bms.append(get_benchmark_object(benchmark, instdir))
+    bms = _get_all_benchmark_objects(instdir)
+    dconf_dicts = _get_all_dconf_dicts(bms)
     export_files(bms, instdir, export_json_folder)
     for figure_definition_filename in figure_definition_filenames:
         figure_definition_list = read_json_file(figure_definition_filename)
-        retxs = []; retys = []; rety_uncs = []; 
+        retxs = []; retys = []; rety_uncs = [];
         normalize_performances = []; fig_types = [];
         free_var_names = []; dep_var_names = []; legends = []; figure_names = []
         figure_name = re.sub('\\.json', '', figure_definition_filename)
         for fig_def_dict in figure_definition_list:
-            for bm in bms:
-                for imp in bm.implementations.values():
-                    try:
-                        if not bm.name == fig_def_dict['benchmark_name']:
-                            continue
-                        if not imp.name == fig_def_dict['implementation_name']:
-                            continue
-                        locked_var = fig_def_dict['locked_vars'] #each element is a dict
-                        legend = fig_def_dict["legend"]
-                        normalize_performances.append(string2bool(fig_def_dict["get normalized performance"]))
-                        fig_types.append(fig_def_dict['type'])
-                        free_var_names.append(fig_def_dict['free_var'])
-                        dep_var_names.append(fig_def_dict["dependent_var"])
-                        legends.append(fig_def_dict["legend"])
-                        dconf_dicts = get_dconf_dicts(bm.name, imp.name, instdir)
-                    except KeyError as e:
-                        print(e.args)
-                        print("Look at graph definitions for benchmark %s, implementation %s" %
-                              (bm.name, imp.name))
-                        raise Exception("KeyError in JSON file. Missing key from JSON: %s" %
-                                        figure_definition_filename)
-                    try:
-                        # [-1] gets last element in list
-                        retx, rety, rety_unc = get_2d_points_dconf_dicts(dconf_dicts,
-                                                                         free_var_names[-1],
-                                                                         locked_var,
-                                                                         normalize_performances[-1],
-                                                                         dep_var_names[-1])
-                    except ValueError as e:
-                        print(e.args)# thrown within get_2d_points_dconf_dicts
-                        raise Exception("Problem with definition of figure with name: %s." %
-                                        figure_name)
-                    retxs.append(retx); retys.append(rety); rety_uncs.append(rety_unc)
+            try:
+                locked_var = fig_def_dict['locked_vars'] #each element is a dict
+                normalize_performances.append(string2bool(fig_def_dict["get normalized performance"]))
+                fig_types.append(fig_def_dict['type'])
+                free_var_names.append(fig_def_dict['free_var'])
+                dep_var_names.append(fig_def_dict["dependent_var"])
+                legends.append(fig_def_dict["legend"])
+            except KeyError as e:
+                print(e.args)
+                print("Look at graph definitions for benchmark %s, implementation %s" %
+                      (bm.name, imp.name))
+                raise Exception("KeyError in JSON file. Missing key from JSON: %s" %
+                                figure_definition_filename)
+            try:
+                # [-1] gets last element in list
+                retx, rety, rety_unc = get_2d_points_dconf_dicts(dconf_dicts,
+                                                                 free_var_names[-1],
+                                                                 locked_var,
+                                                                 normalize_performances[-1],
+                                                                 dep_var_names[-1])
+            except ValueError as e:
+                print(e.args)# thrown within get_2d_points_dconf_dicts
+                raise Exception("Problem with definition of figure with name: %s." %
+                                figure_name)
+            retxs.append(retx); retys.append(rety); rety_uncs.append(rety_unc)
         draw_figure(figure_name, legends, dep_var_names, free_var_names,
                     fig_types, retxs, retys, rety_uncs, normalize_performances)

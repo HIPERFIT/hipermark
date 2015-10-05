@@ -1,0 +1,73 @@
+#!/usr/bin/env python
+
+from scipy.stats import t # Student's T distribution
+import math
+
+CONFIDENCE_LEVEL = 0.95
+
+def get_nth_moment (result_times, n):
+    """ 
+    Calculates the nth moment of a list.
+
+    Keyword values:
+    result_times -- list of result times (floats)
+    n -- integer describing that statistical moment of result_times which is returned
+    """
+    powers = map(lambda x: x**n, result_times)
+    return sum(powers)/float(len(result_times))
+
+def get_mean_and_unc(result_times):
+    """ Returns mean and uncertainty of mean for a list. The uncertainty is 
+    calculated from Student's T distribution since the population variance is
+    unknown.
+
+    Keyword values:
+    result_times -- list of result times (floats)
+
+    return values:
+    sample_mean -- the observed mean
+    unc -- The uncertainty according to Student's T distribution
+    """
+    N = len(result_times)
+    sample_mean = get_nth_moment(result_times, 1)
+    sample_variance = sum([(x - sample_mean)**2 for x in result_times])/float(N - 1)
+    # since the uncertainty in each measurement is 0.5 ms, the
+    # sample_variance should never go below 0.5/sqrt(N).
+    if sample_variance < 0.5/math.sqrt(N):
+        sample_variance = 0.5/math.sqrt(N)
+    estimated_std_err = math.sqrt(sample_variance) / math.sqrt(N)
+    print("sample_variance:", sample_variance)
+    print("sqrt sample_variance:", math.sqrt(sample_variance))
+    print("sample_std_err:", estimated_std_err)
+    interval = t.interval(CONFIDENCE_LEVEL,
+                          N - 1,
+                          loc = sample_mean,
+                          scale = estimated_std_err)
+    unc = (interval[1] - interval[0])/2
+    return (sample_mean, unc)
+
+array1 = [2, 3, 5, 6, 9]
+array2 = [1, 2, 3, 4, 5]
+array3 = [-1, -1, -1, -1, -1, 1, 1, 1, 1, 1]
+array4 = [-1, 1]
+
+mean1, unc1 = get_mean_and_unc(array1)
+mean2, unc2 = get_mean_and_unc(array2)
+mean3, unc3 = get_mean_and_unc(array3)
+mean4, unc4 = get_mean_and_unc(array4)
+
+print("mean:", mean1)
+print("unc:", unc1)
+print("confidence interval:", mean1 - unc1, mean1 + unc1)
+
+print("mean:", mean2)
+print("unc:", unc2)
+print("confidence interval:", mean2 - unc2, mean2 + unc2)
+
+print("mean:", mean3)
+print("unc:", unc3)
+print("confidence interval:", mean3 - unc3, mean3 + unc3)
+
+print("mean:", mean4)
+print("unc:", unc4)
+print("confidence interval:", mean4 - unc4, mean4 + unc4)
