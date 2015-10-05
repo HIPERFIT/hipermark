@@ -20,6 +20,8 @@ The function get_mean_and_unc calculates the mean and the uncertainty for a give
 The measurements are made with a precision of 1 ms. This means that the uncertainty of one measurement can never go below 0.5 ms. The formula for the uncertainty of a sum where each measurement has uncertainty unc_i is: unc_sum = sqrt(sum_i=0^N-1(unc_i^2)), where N is the total number of measurements (which in this case is number of runs for the implementation). If all the unc_i are the same, unc_sum = sqrt(N)*unc. For an average, the uncertainty becomes: unc_av = unc_sum/N = unc/sqrt(N) = 0.5/sqrt(N). Since the uncertainty of the average can never go below this number, the get_mean_and_unc sets the estimated variance to this number if any sample variance below this number is observed.
 
 The results of the confidence interval calculated by using Student's T distribution have been compared with the online calculator found at:
+
 http://www.danielsoper.com/statcalc3/calc.aspx?id=96
 The Python library function is documented at:
+
 [1] http://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.t.html
