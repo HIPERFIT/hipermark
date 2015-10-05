@@ -21,7 +21,8 @@ The measurements are made with a precision of 1 ms. This means that the uncertai
 
 The results of the confidence interval calculated by using Student's T distribution have been compared with the online calculator found at:
 
-http://www.danielsoper.com/statcalc3/calc.aspx?id=96
+[0] http://www.danielsoper.com/statcalc3/calc.aspx?id=96
+
 The Python library function is documented at:
 
 [1] http://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.t.html
