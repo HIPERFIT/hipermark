@@ -1,0 +1,839 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import math
+import json
+import matplotlib.pyplot as plt
+import numpy as np
+import pylab #
+import operator #used for sorting
+import errno
+from scipy.stats import t # Student's T distribution
+import getopt
+import re
+
+# These files are read, not written.
+RESULT_FILENAME = "result.json"
+RUNDATA_FILENAME = "rundata.json"
+RUNTIME_FILENAME = "runtime.txt"
+STDERR_FILENAME = "stderr.log"
+STDOUT_FILENAME = "stdout.log"
+STATIC_CONFIGURATION_FILENAME = "static_configuration.json"
+DYNAMIC_CONFIGURATION_FILENAME = "dynamic_configuration.json"
+RUN_OUTPUT_PATH = "run_output"
+FIGURE_CONFIGURATION_FILENAME = "hiperpret_figure_configuration.json"
+
+#written files
+EXPORT_DCONFS_FILENAME_PREPEND = "export_dconfs_"
+EXPORT_RUNS_FILENAME_PREPEND = "export_runs_"
+EXPORT_JSON_FOLDER_NAME = "exported_jsons"
+FIGURE_FOLDER_NAME = "produced_figures"
+HIPERPRET_FOLDER = "hiperpret"
+
+# dict entries in rundata.json
+TIMESTAMP_START = "timestamp_start"
+TIMESTAMP_END = "timestamp_end"
+RETURN_CODE = "return_code"
+VALIDATION = "validation"
+RUNTIME = "runtime"
+
+# Numerical constants
+CONFIDENCE_LEVEL = 0.95
+
+
+#########################################################
+#                Various help functions                 #
+#########################################################
+
+def mkdir_p(path):
+    """Makes a directory and all non-existing directories needed to contain this directory 
+    If the directory already exists, no error message is given and the function returns.
+    
+    keyword arguments:
+    path -- full path of the directory to be made
+    """
+    try:
+        os.makedirs(path)
+    except OSError as exc: # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else: raise
+
+def read_json_file(filename):
+    """ returns an array containing the content of the JSON file.
+
+    keyword arguments:
+    filename -- name of json file to interpret
+    """
+    with open(filename, "r") as file:
+        return json.loads(str(file.read()))
+
+
+def get_nth_moment (result_times, n):
+    """ 
+    Calculates the nth moment of a list.
+
+    Keyword values:
+    result_times -- list of result times (floats)
+    n -- integer describing that statistical moment of result_times which is returned
+    """
+    powers = map(lambda x: x**n, result_times)
+    return sum(powers)/float(len(result_times))
+
+def get_mean_and_unc(result_times):
+    """ Returns mean and uncertainty of mean for a list. The uncertainty is 
+    calculated from Student's T distribution since the population variance is
+    unknown.
+
+    Keyword values:
+    result_times -- list of result times (floats)
+
+    return values:
+    sample_mean -- the observed mean
+    unc -- The uncertainty according to Student's T distribution
+    """
+    N = len(result_times)
+    sample_mean = get_nth_moment(result_times, 1)
+    sample_variance = sum([(x - sample_mean)**2 for x in result_times])/float(N - 1)
+    # since the uncertainty in each measurement is 0.5 ms, the
+    # sample_variance should never go below 0.5/sqrt(N).
+    if sample_variance < 0.5/math.sqrt(N):
+        sample_variance = 0.5/math.sqrt(N)
+    estimated_std_err = math.sqrt(sample_variance) / math.sqrt(N)
+    interval = t.interval(CONFIDENCE_LEVEL,
+                          N - 1,
+                          loc = sample_mean,
+                          scale = estimated_std_err)
+    unc = (interval[1] - interval[0])/2
+    return (sample_mean, unc)
+
+def string2bool(b_string):
+    if b_string.lower() == "false":
+        return False
+    if b_string.lower() == "true":
+        return True
+    raise ValueError("Invalid string to describe boolean value. Use True or False (case insensitive).")
+
+#########################################################
+#     Class Definitions for Benchmark Descriptions      #
+#########################################################
+
+class Run:
+    def __init__(self, benchmark,
+                 implementation,
+                 static_configuration,
+                 case,
+                 dynamic_configuration,
+                 runnum,
+                 directory):
+        self.benchmark = benchmark
+        self.implementation = implementation
+        self.static_configuration = static_configuration
+        self.case = case
+        self.dynamic_configuration = dynamic_configuration # an pointer to an object
+        self.name = runnum
+        self.directory = directory
+        rundir_content = [RESULT_FILENAME, RUNTIME_FILENAME,\
+                          STDERR_FILENAME, STDOUT_FILENAME, RUNDATA_FILENAME]
+        dircontents = os.listdir(self.directory)
+        N = len(rundir_content)
+        for i in range(N):
+            if not rundir_content[i] in dircontents:
+                raise Exception("The folder %s does not contain the file %s." %
+                                (self.directory, rundir_content[i]))
+        with open(os.path.join(self.directory,
+                               RUNTIME_FILENAME), "r") as runtime_fp:
+            with open(os.path.join(self.directory,
+                                   STDERR_FILENAME), "r") as stderr_fp:
+                with open(os.path.join(self.directory,
+                                       STDOUT_FILENAME), "r") as stdout_fp:
+                    try:
+                        rd_dict_path = os.path.join(self.directory,
+                                                    RUNDATA_FILENAME)
+                        rd_dict = read_json_file(rd_dict_path)
+                        self.retcode = int(rd_dict[RETURN_CODE])
+                        self.ts_start = float(rd_dict[TIMESTAMP_START])
+                        self.ts_end = float(rd_dict[TIMESTAMP_END])
+                        self.validation = int(rd_dict[VALIDATION])
+                        self.runtime = int(runtime_fp.read())
+                        self.stderr = str(stderr_fp.read())
+                        self.stdout = str(stdout_fp.read())
+                    except ValueError as e:
+                        raise Exception("The content of one of\
+                        the results in %s was malformed:\
+                        %s." % (self.directory, e.args()))
+                    except KeyError as e:
+                        print("Missing key in JSON file.")
+                        print(e.args())
+                        raise Exception("The content of %s did not contain the\
+                        expected keys." % RUNDATA_FILENAME)
+
+    def __str__(self):
+        return "benchmark: {0}, \
+        implementation: {1}, \
+        static configuration: {2}, \
+        dataset: {3}, \
+        dynamic configuration: {4}\
+        run number: {5}"\
+        .format(self.benchmark.name,
+                self.implementation.name,
+                str(self.static_configuration.configuration),
+                self.case.name,
+                str(self.dynamic_configuration.configuration),
+                str(self.name))
+
+class Dynamic_configuration:
+    def __init__(self, benchmark, implementation,
+                 static_configuration, case, name, directory):
+        self.benchmark = benchmark
+        self.implementation = implementation
+        self.static_configuration = static_configuration
+        self.case = case
+        self.name = name
+        self.directory = directory
+        self.runs = {}
+        dconf_filename = os.path.join(self.directory,
+                                      DYNAMIC_CONFIGURATION_FILENAME)
+        if not os.path.isfile(dconf_filename):
+            raise Exception("%s does not contain a file describing its \
+            runtime variables. If no runtime vars, a file containing \
+            \"{}\" should still be here." % self.directory)
+        try:
+            self.configuration = read_json_file(dconf_filename)
+        except ValueError as e:
+            print("Error reading JSON")
+            print(e.args)
+            raise Exception("Error reading JSON file %s", dconf_filename)
+            # Casting to string, experimental (Oct 5, 2015)        
+        for key, value in self.configuration.iteritems():
+            self.configuration[str(key)] = self.configuration.pop(key)
+            self.configuration[str(key)] = str(value)
+        dircontents = os.listdir(self.directory)
+        for run in dircontents:
+            if run == DYNAMIC_CONFIGURATION_FILENAME:
+                continue
+            runpath = os.path.join(self.directory, run)
+            if not os.path.isdir(runpath):
+                raise Exception("%s may only contain %s and directories \
+                containing runs. %s is neither." %
+                                (self.directory, DYNAMIC_CONFIGURATION_FILENAME,
+                                 runpath))
+            try:
+                runnum = int(run)
+                if runnum < 0:
+                    raise Exception("Only non-negative run numbers (i.e., directory names)\
+                are allowed in %s." % target_dir)
+                self.runs[runnum] = Run(self.benchmark, self.implementation,
+                                        self.static_configuration, self.case,
+                                        self, runnum, runpath)
+            except ValueError:
+                raise Exception("The folder %s may only contain folders with\
+                integer name." % self.directory)
+        self.number_of_runs = len(self.runs.keys())
+
+
+    def __str__(self):
+        return "benchmark: {0}, \
+        implementation: {1}, \
+        static configuration: {2}, \
+        dataset: {3}, \
+        dynamic configuration: {4}"\
+        .format(self.benchmark.name,
+                self.implementation.name,
+                str(self.static_configuration.configuration),
+                self.case.name,
+                str(self.configuration))
+
+class Case:
+    def __init__(self, benchmark, implementation,
+                 static_configuration, name, directory):
+        self.benchmark = benchmark
+        self.implementation = implementation
+        self.static_configuration = static_configuration
+        self.name = name # name of a dataset.
+        self.directory = directory
+        self.dynamic_configurations = {}
+        dircontents = os.listdir(self.directory)
+        for dconf in dircontents:
+            dconf_path = os.path.join(self.directory, dconf)
+            if not os.path.isdir(dconf_path):
+                raise Exception("%s may only contain folders containing dynamic\
+                variables configurations. %s is not a folder" %
+                                (self.directory,
+                                 dconf_path))
+            self.dynamic_configurations[dconf] \
+                = Dynamic_configuration(self.benchmark,
+                                        self.implementation,
+                                        self.static_configuration,
+                                        self,
+                                        dconf,
+                                        dconf_path)
+        if not self.dynamic_configurations:
+            raise Exception("The case:\n %s does not contain any folders for \
+            dynamic configurations." % str(self))
+
+    def __str__(self):
+        return "benchmark: {0}, \
+        implementation: {1}, \
+        static configuration: {2}, \
+        dataset: {3}"\
+        .format(self.benchmark.name,
+                self.implementation.name,
+                str(self.static_configuration.configuration),
+                self.name)
+    
+class Static_configuration:
+    def __init__(self, benchmark, implementation, name, directory):
+        self.benchmark = benchmark
+        self.implementation = implementation
+        self.name = name
+        self.directory = directory
+        self.cases = {}
+        sconf_filename = os.path.join(self.directory,
+                                      STATIC_CONFIGURATION_FILENAME)
+        run_output_path = os.path.join(self.directory,
+                                       RUN_OUTPUT_PATH)
+        self.run_output_path = run_output_path
+        if not os.path.isfile(sconf_filename):
+            raise Exception("%s does not contain a file describing its \
+            compile-time variables. If no compile-time vars, a file containing \
+            \"{}\" should still be here." % self.directory)
+        if not os.path.isdir(run_output_path):
+            raise Exception("%s does not contain a folder called %s as it \
+            should." % (self.directory, RUN_OUTPUT_PATH))
+        # what if this is a malformed JSON??
+        try:
+            self.configuration = read_json_file(sconf_filename)
+        except ValueError as e:
+            print("\n" + str(e.args) + "\n")
+            raise Exception("Error reading JSON file: %s" % sconf_filename)
+        datasets = os.listdir(run_output_path)
+        empty = True
+        for dataset in datasets:
+            empty = False
+            dataset_path = os.path.join(run_output_path, dataset)
+            if not os.path.isdir(dataset_path):
+                raise Exception("The folder %s may only contain folders with \
+                names of datasets." % run_output_path)
+            self.cases[dataset] = Case(self.benchmark,
+                                       self.implementation,
+                                       self,
+                                       dataset,
+                                       dataset_path)
+        if empty:
+            raise Exception("%s does not contain folder(s) for datasets as it\
+            should" % run_output_path)
+
+    def __str__(self):
+        return "benchmark: {0}, \
+        implementation: {1}, \
+        static configuration: {2}"\
+        .format(self.benchmark.name,
+                self.implementation.name,
+                str(self.configuration))
+    
+class Implementation:
+    def __init__(self, benchmark, name, directory):
+        self.benchmark = benchmark
+        self.name = name
+        self.directory = directory
+        self.static_configs = {}
+        empty = True
+        # contains only folders with statconf names.
+        dircontents = os.listdir(self.directory)
+        for sconf in dircontents:
+            empty = False
+            sconf_dir = os.path.join(self.directory, sconf)
+            if not os.path.isdir(sconf_dir):
+                raise Exception("The content of %s must be folders with names \
+                for static configurations (hash values).\
+                But %s is not a folder." % (RUN_OUTPUT_PATH, sconf_dir))
+            # Here, the keys of the cases will be hash values.
+            self.static_configs[sconf] = \
+            Static_configuration(self.benchmark, self,
+                                 sconf, sconf_dir)
+        if empty:
+                raise Exception("No folders for static configurations was found\
+                in %s." % self.directory)
+            
+    def __str__(self):
+        return "benchmark: {0}, \
+        implementation: {1}"\
+        .format(self.benchmark.name,
+                self.name)
+    
+class Benchmark:
+    def __init__(self, name, directory):
+        self.name = name
+        self.directory = directory
+        self.implementations = {}
+        dircontents = os.listdir(self.directory)
+        for impl in dircontents:
+            impldir = os.path.join(self.directory, impl)
+            if not os.path.isdir(impldir):
+                raise Exception("The folder containing the %s benchmark must\
+                only contain directories. %s is not a directory." %
+                                (self.name, impldir))
+            implname = os.path.basename(impldir)
+            self.implementations[implname] = Implementation(self,
+                                                            implname,
+                                                            impldir)
+            
+    def __str__(self):
+        """ This function allows for printing of benchmark objects.
+        """
+        a = "benchmark: {0}".format(self.name)
+        return a
+
+#########################################################
+#   Helper functions for visualizing and interpreting   #
+#       the objects defined in the classes above        #
+#########################################################
+
+def get_benchmark_object(benchmark_name, instdir):
+    if not os.path.isdir(instdir):
+        raise Exception("Directory %s could not be found." % instdir)
+    dircontents = os.listdir(instdir)
+    b = {}
+    rootdir = os.getcwd()
+    non_dirs = filter(lambda path:
+                      not os.path.isdir(os.path.join(rootdir, instdir, path)),
+                      dircontents)
+    if non_dirs:
+        raise Exception("Only directories may be be placed in %s." % sys.argv[1])
+    bmdirs = map(lambda bm: os.path.join(rootdir, instdir, bm), dircontents)
+    b_vals = map(lambda name, bmdir: Benchmark(name, bmdir), dircontents, bmdirs)
+    b = dict(zip(dircontents, b_vals))
+    try:
+        benchmark = b[benchmark_name]
+    except KeyError:
+        raise Exception("%s was not found among the benchmark objects." %
+                        benchmark_name)
+    return benchmark
+
+def get_implementation_object(benchmark, implementation_name):
+    try:
+        implementation = benchmark.implementations[implementation_name]
+    except KeyError:
+        raise Exception("%s was not found among the implementations of benchmark\
+        %s" %(implementation_name))
+    return implementation
+
+def get_all_static_configs(implementation):
+    sconfs = implementation.static_configs.values()
+    return sconfs
+
+def flatten_list(listlist):
+    flatlist = reduce(lambda l1, l2: l1 + l2, listlist) #list list -> list
+    return flatlist
+
+def get_all_case_objects(sconfs):
+    cases = map(lambda sconf: sconf.cases.values(), sconfs)
+    cases = flatten_list(cases)
+    return cases
+
+def get_all_dynamic_configs(cases):
+    dconfs = map(lambda case: case.dynamic_configurations.values(), cases)
+    dconfs = flatten_list(dconfs)
+    return dconfs
+
+def get_all_runs(dconfs):
+    runs = map(lambda dconf: dconf.runs.values(), dconfs)
+    runs = flatten_list(runs)
+    return runs
+
+def get_run_dicts(benchmark_name, implementation_name, instdir):
+    """ Given an implementation, this function returns a list of dictionaries
+    where each element describes a specific run.
+    """
+    def _generate_json(run):
+        run_data = {}
+        run_data['benchmark_name'] = run.benchmark.name
+        run_data['implementation_name'] = run.implementation.name
+        run_data.update(run.static_configuration.configuration)
+        run_data['dataset_name'] = run.case.name
+        run_data.update(run.dynamic_configuration.configuration)        
+        run_data['runnum'] = run.name
+        run_data['retcode'] = run.retcode
+        run_data['validation'] = run.validation
+        run_data['runtime'] = run.runtime
+        run_data['ts_start'] = run.ts_start
+        run_data['ts_end'] = run.ts_end
+        return run_data
+    benchmark = get_benchmark_object(benchmark_name, instdir)
+    implementation = get_implementation_object(benchmark, implementation_name)
+    sconfs = get_all_static_configs(implementation)
+    cases = get_all_case_objects(sconfs)
+    dconfs = get_all_dynamic_configs(cases)
+    runs = get_all_runs(dconfs)
+    dicts = map(_generate_json, runs)
+    return dicts
+
+def get_dconf_dicts(benchmark_name, implementation_name, instdir):
+    """Given an implementation, this function generates a list of dictionaries
+    where each element describes a dynamic configuration for that
+    implementation.
+    """
+    def belongs_to_dconf(configuration, run_dict):
+        for key in configuration:
+            if not run_dict[key] == configuration[key]:
+                return False
+        return True
+    
+    def get_runs_of_dconf(configuration, run_dicts):
+        dcruns = []
+        for run_dict in run_dicts:
+            if belongs_to_dconf(configuration, run_dict):
+                dcruns.append(run_dict)
+        return dcruns
+
+    def _generate_json_dconf(dconf):
+        dconf_data = {}
+        dconf_data['benchmark_name'] = dconf.benchmark.name
+        dconf_data['implementation_name'] = dconf.implementation.name
+        dconf_data.update(dconf.static_configuration.configuration)
+        dconf_data['dataset_name'] = dconf.case.name
+        dconf_data.update(dconf.configuration)
+        return dconf_data
+
+    def set_statistics_for_dconf(configuration, run_dicts):
+        run_dicts_of_dconf = get_runs_of_dconf(configuration, run_dicts)
+        run_times = []
+        for run_dict in run_dicts_of_dconf:
+            if (run_dict['validation'] != 1) or (run_dict['retcode'] != 0):
+                raise Exception("Non-validated run encountered in the attempt \
+                to create a JSON for each configuration. Stopped. Error found in:",\
+                                str(run_dict))
+            run_times.append(run_dict['runtime'])
+        N = len(run_times)
+        mean, mean_uncertainty = get_mean_and_unc(run_times)
+        configuration['mean runtime'] = mean
+        configuration['mean runtime uncertainty'] = mean_uncertainty
+        configuration['number_of_runs'] = N
+        return
+    
+    benchmark = get_benchmark_object(benchmark_name, instdir)
+    implementation = get_implementation_object(benchmark, implementation_name)
+    sconfs = get_all_static_configs(implementation)
+    cases = get_all_case_objects(sconfs)
+    dconfs = get_all_dynamic_configs(cases)
+    run_dicts = get_run_dicts(benchmark_name, implementation_name, instdir)
+    configurations = map(_generate_json_dconf, dconfs)
+    for config in configurations:
+        set_statistics_for_dconf(config, run_dicts)
+    return configurations
+
+#########################################################
+# Function for exporting JSONs representing the objects #
+#                     defined above                     #
+#########################################################
+
+def export_files(bms, instdir, export_folder):
+    """ Write information about runs and accumulated run data (dconf)
+    to the disk.
+    
+    Keyword arguments:
+    bms -- list of benchmarks
+    instdir -- Directory where hipermark has stored the results
+    export_folder -- where hiperpret will store the results.
+    """
+    def _export_runs(instdir, benchmark_name, implementation_name, filename):
+        """Given an implementation, this function exports all data generated by
+        hipermark to a JSON file specified by the user. The exported data is a list
+        of all hipermark generated data from each run.
+        """   
+        run_dicts = get_run_dicts(benchmark_name, implementation_name, instdir)
+        with open(filename, "w") as fp:
+            ret = fp.write(json.dumps(run_dicts))
+        return ret
+
+    def _export_dconfs(instdir, benchmark_name, implementation_name, filename):
+        dconf_dicts = get_dconf_dicts(benchmark_name, implementation_name, instdir)
+        with open(filename, "w") as fp:
+            ret = fp.write(json.dumps(dconf_dicts))
+        return ret
+        
+    for bm in bms:
+        for impl in bm.implementations.values():
+            filename_runs = os.path.join(export_folder,
+                                         EXPORT_RUNS_FILENAME_PREPEND +
+                                         bm.name + "_" +  impl.name + ".json")
+            filename_dconfs = os.path.join(export_folder,
+                                           EXPORT_DCONFS_FILENAME_PREPEND +
+                                           bm.name + "_" +  impl.name + ".json")
+            _export_runs(instdir, bm.name, impl.name, filename_runs)
+            _export_dconfs(instdir, bm.name, impl.name, filename_dconfs)
+
+            
+def get_2d_points_dconf_dicts(dconf_dicts,
+                              free_var,
+                              locked_vars,
+                              normalize_performance,
+                              dep_var = "mean runtime",
+                              dep_unc = 'mean runtime uncertainty'):
+    """Given dicts that describe configurations, this function returns three
+    lists. One representing x point, one y points, and one uncertainties on the
+    y-axis.
+
+    Keyword arguments:
+    dconf_dicts -- the list of dictionaries, one element for each configuration.
+    free_var -- The name of the free variable 
+    locked_vars -- a dictionary representing all the locked variables.
+    normalize_performance -- If True, this function returns the norm. recip. val. of dep_var.
+    dep_var -- name of dependent variable (variable on y-axis)
+    dep_unc -- name of uncertainty of dep_var
+    """
+    def _get_normalized_performance(runtimes, uncs):
+        norm_const =runtimes[0] #all lists taken as args are assumed sorted by x_values.
+        performance = map(lambda rt: norm_const / rt, runtimes)
+        # unc_f(x) = unc_x*f'(x)
+        unc_perf = map(lambda unc, runtime: norm_const*unc / runtime**2, uncs, runtimes)
+        return performance, unc_perf        
+
+    num_of_vars = len(dconf_dicts[0].keys())
+    num_of_locked_vars = len(locked_vars.keys())
+    # The below check should probably be performed.
+#    if num_of_vars - num_of_locked_vars != 5:
+#       raise Exception("The wrong number of locked variables has been provided.\
+#       The configuration dicts contain %d variables." % num_of_vars)
+    #filter the dconfs that agree with the locked variables.
+    try:
+        ret_dconfs = filter(lambda dconf_dict:
+                            all(map(lambda key: dconf_dict[str(key)] == locked_vars[str(key)],
+                                    locked_vars.keys())),
+                            dconf_dicts)
+        if not ret_dconfs:
+            raise ValueError("The values specified in locked_vars of the JSON\
+            describing a function were not matched by any runs.")    
+    except KeyError as e:
+        raise Exception("Variable defined in locked_vars not found in\
+        configuration dicts: %s" % (e.args))
+    
+    # Ensure that keys and vals are all strings
+    for ret_dconf in ret_dconfs:
+        for key in ret_dconf.keys():
+            ret_dconf[str(key)] = ret_dconf.pop(key)
+            ret_dconf[str(key)] = str(ret_dconf[str(key)])
+
+    # Sort the list of dictionaries according to free variable. Incorrect for large ints.
+    try:
+        ret_dconfs = sorted(ret_dconfs, key=lambda k: float(k[free_var]))         
+    except:
+        ret_dconfs.sort(key=operator.itemgetter(free_var))
+    try:
+        x_values = map(lambda ret_dconf: ret_dconf[free_var], ret_dconfs)
+    except KeyError:
+        raise Exception("free_var argument given to %s function not found in dconf_dicts" %
+                        sys._getframe().f_code.co_name)
+    try:
+        y_values = map(lambda ret_dconf: ret_dconf[dep_var], ret_dconfs)
+    except KeyError:
+        raise Exception("dep_var argument given to %s function not found in dconf_dicts" %
+                        sys._getframe().f_code.co_name)
+    try:
+        y_uncs = map(lambda ret_dconf: ret_dconf[dep_unc], ret_dconfs)
+    except KeyError:
+        raise Exception("dep_unc argument given to %s function not found in dconf_dicts" %
+                        sys._getframe().f_code.co_name)
+
+    y_values_floats = map(lambda y: float(y), y_values)
+    y_unc_floats = map(lambda unc: float(unc), y_uncs)
+    
+    if normalize_performance:
+        y_values_floats, y_unc_floats = _get_normalized_performance(y_values_floats,
+                                                                    y_unc_floats)
+    
+    try:
+        x_values_floats = map(lambda x: float(x), x_values)
+    except ValueError:
+        print("Warning: x-values not recognized as numbers in this configuration:")
+        try:
+            print(str(ret_dconfs[0]['benchmark_name']), str(ret_dconfs[0]['implementation_name']))
+        except:
+            pass
+        return x_values, y_values_floats, y_unc_floats
+    return x_values_floats, y_values_floats, y_unc_floats
+
+def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_valss, y_valss, y_uncss, normalize_performances):
+    """Draws n bar diagrams or n graphs in one figure.
+    If dependent variable name (dep_var) is \"normalized\" performance, then 
+    the values over the bars are written as floats with two decimals. 
+    Otherwise, they are written as ints.
+
+    Keyword arguments:
+    fig_name -- Name of figure. Only 1st name is printed.
+    legends -- list of legend names.
+    dep_var_names -- list of dependent variable name. Must all agree. (1 per graph)
+    free_var_names -- list of independent variable name. Must all agree.(1 per graph) 
+    x_valss -- list of list of x values
+    y_valss -- as x but for dependent variable values
+    y_uncss -- structure as x, uncertainty of y
+    """
+    def autolabel(rects, normalize_performance):
+        for rect in rects:
+            height = float(rect.get_height())
+            if normalize_performance:
+                ax.text(rect.get_x()+rect.get_width()/2., 1.05*height, '%.2f'%float(height),
+                        ha='center', va='bottom')
+            else:
+                ax.text(rect.get_x()+rect.get_width()/2., 1.05*height, '%d'%int(height),
+                        ha='center', va='bottom')
+
+    def check_for_valid_function_call():
+        """ Raises an exception if sticky graphs are non-uniform
+        """
+        no_of_graphs = len(legends)
+        if no_of_graphs > len(color_codes):
+            print("Warning: Only %d different colors exist.\
+            %d different graphs requested for one figure." %
+                  (len(color_codes), no_of_graphs))
+        if not all(map(lambda name: name == dep_var_names[0], dep_var_names)):
+            raise Exception("Figure requested with non-uniform dependent variable names")
+        if not all(map(lambda name: name == free_var_names[0], free_var_names)):
+            raise Exception("Figure requested with non-uniform free variable variable names")
+        if not all(map(lambda bool_val: bool_val == normalize_performances[0], normalize_performances)):
+            raise Exception("Figure requested with non-uniform normalized booleans")
+        if not all(map(lambda fig_type: fig_type == fig_types[0], fig_types)):
+            raise Exception("Figure requested with non-uniform fig types. \
+            For a specific figure, all types must be either \"bar\" or \"graph\"")
+        return
+
+    def collapse_x_axis_labels(N, x_vals):
+        ind = np.arange(1, N + round(N/10), round(N/10) )
+        x_vals = tuple(np.arange(min(x_vals), round(max(x_vals)) + round((max(x_vals) - min(x_vals))/11), ))
+        return ind, x_vals
+
+    def set_figure_names(ax, normalize_performance):
+        if normalize_performance:
+            ax.set_ylabel("normalized performance")
+        else:
+            ax.set_ylabel(dep_var_names[0])
+        ax.set_xlabel(free_var_names[0])
+        ax.set_title(fig_name)
+
+    color_codes = ['b', 'g', 'r', 'c', 'm', 'k', 'y']
+    check_for_valid_function_call()
+    no_of_graphs = len(legends)
+    N = len(x_valss[0]) #should be the same for all graphs
+    bar_width = float(1)/(N*no_of_graphs)
+    fig, ax = plt.subplots()
+    set_figure_names(ax, normalize_performances[0])
+    rects = ()
+    for i in range(no_of_graphs):
+        # in case the different graphs contain different number of vals (unlikely)
+        N = len(x_valss[i])
+        x_vals = tuple(x_valss[i]); y_vals = tuple(y_valss[i]); y_uncs = tuple(y_uncss[i])
+        if type(x_vals[0]) == str:
+            ind = np.arange(N) # Could be set to the x values. But these are not always numericals.
+        else:
+            ind = np.asarray(map(lambda f: int(f), x_vals))
+        if fig_types[i] == "bar":
+            rects1 = ax.bar(ind+i*bar_width, y_vals, bar_width, color = color_codes[i % len(color_codes)], yerr=y_uncs)
+            rects = rects + (rects1,)
+        elif fig_types[i] == "graph":
+            rects1 = ax.plot(ind, y_vals, 'bo', ind, y_vals, color = color_codes[i % len(color_codes)])
+            rects = rects + (rects1,)            
+            ax.errorbar(ind, y_vals, yerr=y_uncs)
+        else:
+            raise Exception("Unknown graph type requested: %s" % fig_type)
+        if N > 10:
+            ind, x_vals = collapse_x_axis_labels(N, x_vals)
+        if fig_types[i] == "bar":
+            autolabel(rects1, normalize_performances[i])
+            if i == 0:
+                ax.set_xticks(ind + no_of_graphs*bar_width/2)
+                ax.set_xticklabels(x_vals)
+        else:
+            if i == 0:
+                ax.set_xticks(ind)
+                ax.set_xticklabels(ind)
+    rects = [i[0] for i in rects]
+    ax.legend(tuple(rects), tuple(legends), loc='best' )
+    fig_filename = os.path.join(HIPERPRET_FOLDER, FIGURE_FOLDER_NAME, fig_name)
+    pylab.savefig(fig_filename, bbox_inches='tight')
+
+if __name__ == "__main__":
+    def _parse_sysarg(sysargv):
+        try:
+            opts, args = getopt.getopt(sysargv,
+                                       "i:f:o:",
+                                       ["instantiation_dir=",
+                                        "figure_=",
+                                        "export_to="])
+            no_fig_defs = 0
+        except getopt.GetoptError as err:
+            print str(err)
+            sys.exit(2)
+        for o, a in opts:
+            if o in ("-i", "--instantiation_dir="):
+                instdir = a
+            elif o in ("-f", "figure_definition="):
+                if no_fig_defs == 0:
+                    figure_definition_filenames = []
+                figure_definition_filenames.append(a)
+                no_fig_defs += 1
+            elif o in ("-o", "--export_to="):
+                export_folder = a
+            else:
+                print("unhandled option given as command line argument: %s", o)
+                assert False
+        if not os.path.isdir(instdir):
+            raise Exception("The instatiations dir must be a directory.")
+        return instdir, figure_definition_filenames, export_folder
+
+    def _get_all_benchmark_objects(instdir):
+            benchmarks = os.listdir(instdir)
+            bms = [];
+            for benchmark in benchmarks:
+                bms.append(get_benchmark_object(benchmark, instdir))
+            return bms
+
+    instdir, figure_definition_filenames, export_folder = _parse_sysarg(sys.argv[1:])
+    figure_folder = os.path.join(export_folder, FIGURE_FOLDER_NAME)
+    export_json_folder = os.path.join(export_folder, EXPORT_JSON_FOLDER_NAME)
+    mkdir_p(figure_folder); mkdir_p(export_json_folder)
+    bms = _get_all_benchmark_objects(instdir)
+    export_files(bms, instdir, export_json_folder)
+    for figure_definition_filename in figure_definition_filenames:
+        figure_definition_list = read_json_file(figure_definition_filename)
+        retxs = []; retys = []; rety_uncs = [];
+        normalize_performances = []; fig_types = [];
+        free_var_names = []; dep_var_names = []; legends = []; figure_names = []
+        figure_name = re.sub('\\.json', '', figure_definition_filename)
+        for fig_def_dict in figure_definition_list:
+            for bm in bms:
+                for imp in bm.implementations.values():
+                    try:
+                        fig_bm = fig_def_dict['benchmark']
+                        fig_imp = fig_def_dict['implementation']
+                        if fig_bm != bm.name or fig_imp != imp.name:
+                            continue
+                        dconfs = get_dconf_dicts(bm.name, imp.name, instdir)
+                        locked_var = fig_def_dict['locked_vars'] #each element is a dict
+                        normalize_performances.append(string2bool(fig_def_dict["get normalized performance"]))
+                        fig_types.append(fig_def_dict['type'])
+                        free_var_names.append(fig_def_dict['free_var'])
+                        dep_var_names.append(fig_def_dict["dependent_var"])
+                        legends.append(fig_def_dict["legend"])
+                    except KeyError as e:
+                        print(e.args)
+                        print("Look at graph definitions for benchmark %s,\
+                        implementation %s" % (bm.name, imp.name))
+                        raise Exception("KeyError in JSON file. Missing key from JSON:\
+                        %s" % figure_definition_filename)                     
+                # [-1] gets last element in list
+                    try:
+                        retx, rety, rety_unc = get_2d_points_dconf_dicts(
+                            dconfs,
+                            free_var_names[-1],
+                            locked_var,
+                            normalize_performances[-1],
+                            dep_var_names[-1])
+                    except ValueError as e:
+                        print(e.args)# thrown within get_2d_points_dconf_dicts
+                        raise Exception("Problem with definition of figure with name:\
+                        %s." %  figure_name)
+                    retxs.append(retx); retys.append(rety); rety_uncs.append(rety_unc)
+        draw_figure(figure_name, legends, dep_var_names, free_var_names,
+                    fig_types, retxs, retys, rety_uncs, normalize_performances)
