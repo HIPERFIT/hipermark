@@ -26,6 +26,18 @@ url = re.sub('\\.com$', '', url)
 print(url)
 
 def main():
+    print("range(len[1,2,3,4]):")
+    print(range(len([1,2,3,4])))
+    a = [4]
+    print("PMD0")
+    print('type of a: {0}. a = '.format(type(a)))
+    print("a is:", a)
+    a.append(5)
+    print("a is:", a)
+    print("Type of dict:")
+    print(type({}))
+    an_empty_dict = {}
+    print('(type(an_empty_dict) == dict) evaluates to {0}'.format(type({}) == dict))
     try:
         # In the list, the long options are defined.
         # In the string (2nd argument), the options are listed as a string.
