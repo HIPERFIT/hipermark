@@ -38,6 +38,15 @@ RETURN_CODE = "return_code"
 VALIDATION = "validation"
 RUNTIME = "runtime"
 
+# Names of some the keys in dconf_dicts
+# These are keys whose values cannot be used to describe the setup for this
+# runs.
+# This is used for making legends for the figure type "underspecified"
+UNIV_DCONF_KEY1 = "mean runtime uncertainty"
+UNIV_DCONF_KEY2 = "number of runs"
+UNIV_DCONF_KEY3 = "mean runtime"
+UNIV_DCONF_KEYS = [UNIV_DCONF_KEY1, UNIV_DCONF_KEY2, UNIV_DCONF_KEY3]
+
 # Numerical constants
 CONFIDENCE_LEVEL = 0.95
 
@@ -60,6 +69,7 @@ def mkdir_p(path):
             pass
         else: raise
 
+## Converts from unicode to utf-8 strings        
 ## copy-pasted from:
 ## <http://stackoverflow.com/questions/956867/how-to-get-string-objects-instead-of-unicode-ones-from-json-in-python> (Oct 20, 2015).
 def byteify(input):
@@ -522,7 +532,7 @@ def get_dconf_dicts(benchmark_name, implementation_name, instdir):
         mean, mean_uncertainty = get_mean_and_unc(run_times)
         configuration['mean runtime'] = mean
         configuration['mean runtime uncertainty'] = mean_uncertainty
-        configuration['number_of_runs'] = N
+        configuration['number of runs'] = N
         return
     
     benchmark = get_benchmark_object(benchmark_name, instdir)
@@ -809,8 +819,20 @@ if __name__ == "__main__":
         return flatten_list(dconf_dicts)
 
     def _handle_underspecified(dconf_dicts, fig_def, filename):
-        """ This handles the figure type 'underspecified'.
+        """ This handles the figure type 'underspecified'. The return values
+        make it possible to produce the graph.
         """
+        def _get_legend(dconf_dict, fig_def):
+            """ Gets legend for underspecified figure
+            """
+            legend = ""
+            for key in dconf_dict:
+                if ((key not in UNIV_DCONF_KEYS) and
+                    (key not in fig_def['locked variables'])):
+                    legend = legend + dconf_dict[key] + ', '
+            legend = legend[:legend.rfind(', ')]
+            return legend
+                
         assert type(fig_def) == dict
         assert fig_def["dependent variable"] == "mean runtime"
         locked_vars = fig_def["locked variables"]
@@ -819,64 +841,57 @@ if __name__ == "__main__":
             for lvk in list(locked_vars.keys()):
                 dconf_dicts = filter(lambda d: locked_vars[lvk] == d[lvk], dconf_dicts)
                 ## legend should be a list containing strings describing each dconf_dict in the final dconf_dicts list.
-                legend = legend + " " + str(locked_vars[lvk])
         except KeyError as e:
             print("Key error with key:")
             print(e.args)
             raise Exception("KeyError in JSON file. \
             Key not found in dicts describing setups (dconfs). \
             JSON file where key was found: %s" % filename)
-        ys = map(lambda d: [float(d["mean runtime"])], dconf_dicts) # must be list list
-        y_uncs = map(lambda d: [float(d["mean runtime uncertainty"])], dconf_dicts)
-        N = len(ys)
-        xs = [[0]]*N
-        legend = [legend]*N
-        dep_var_names = ["mean runtime"]*N; free_var_names = [""]*N
-        normalize_performances = [False]*N; fig_types = ['bar']*N
-        return (legend,
-                dep_var_names,
-                free_var_names,
-                fig_types,
-                xs,
-                ys,
-                y_uncs,
-                normalize_performances)
+        N = len(dconf_dicts)
+        fig = {}
+        fig['ys'] = map(lambda d: [float(d["mean runtime"])], dconf_dicts) # must be list list
+        fig['y_uncs'] = map(lambda d: [float(d["mean runtime uncertainty"])], dconf_dicts)
+        fig['xs'] = [[0]]*N
+        fig['legends'] = map(lambda d, fd: _get_legend(d, fd), dconf_dicts, [fig_def]*N)
+        fig['dep_var_names'] = ["mean runtime"]*N;
+        fig['free_var_names'] = [""]*N
+        fig['normalize_performances'] = [False]*N;
+        fig['fig_types'] = ['bar']*N
+        return fig
         
     def _handle_bar_and_graph(dconf_dicts, fig_def_dicts, filename):
-        legends = []; dep_var_names = []; free_var_names = [];
-        fig_types = []; xs = []; ys = []; y_uncs = []; normalize_performances = [];
+        fig = {'legends':[], 'dep_var_names':[], 'free_var_names':[],
+                  'fig_types':[], 'xs':[], 'ys':[], 'y_uncs':[],
+                  'normalize_performances':[]}
         for fig_def_dict in fig_def_dicts:
             try:
                 locked_var = fig_def_dict['locked variables'] #this is a dict
-                normalize_performances.append(string2bool(fig_def_dict["get normalized performance"]))
-                fig_types.append(fig_def_dict['type'])
-                free_var_names.append(fig_def_dict['free_var'])
-                dep_var_names.append(fig_def_dict["dependent variable"])
-                legends.append(fig_def_dict["legend"])
+                fig['normalize_performances'].append(
+                    string2bool(fig_def_dict["get normalized performance"]))
+                fig['fig_types'].append(fig_def_dict['type'])
+                fig['free_var_names'].append(fig_def_dict['free_var'])
+                fig['dep_var_names'].append(fig_def_dict["dependent variable"])
+                fig['legends'].append(fig_def_dict["legend"])
             except KeyError as e:
                 print(e.args)
                 raise Exception("KeyError in JSON file. Missing key from JSON: %s" %
                                 filename)
             try:
                 # [-1] gets last element in list
-                retx, rety, rety_unc = get_2d_points_dconf_dicts(dconf_dicts,
-                                                                 free_var_names[-1],
-                                                                 locked_var,
-                                                                 normalize_performances[-1],
-                                                                 dep_var_names[-1])
+                (retx,
+                rety,
+                rety_unc) = get_2d_points_dconf_dicts(dconf_dicts,
+                                                     fig['free_var_names'][-1],
+                                                     locked_var,
+                                                     fig['normalize_performances'][-1],
+                                                     fig['dep_var_names'][-1])
             except ValueError as e:
                 print(e.args)# thrown within get_2d_points_dconf_dicts
                 raise Exception("Problem with definition of figure with name: %s." %
                                 figure_name)
-            xs.append(retx); ys.append(rety); y_uncs.append(rety_unc)
-        return (legends,
-                dep_var_names,
-                free_var_names,
-                fig_types,
-                xs,
-                ys,
-                y_uncs,
-                normalize_performances)
+            fig['xs'].append(retx); fig['ys'].append(rety)
+            fig['y_uncs'].append(rety_unc)
+        return fig
 
     def _handle_figure_definitions(figure_definition_filenames, dconf_dicts):
         for figure_definition_filename in figure_definition_filenames:
@@ -884,29 +899,16 @@ if __name__ == "__main__":
             figure_name = re.sub('\\.json', '', figure_definition_filename)
             if figure_definition_list[0]["type"] == "underspecified":
                 assert len(figure_definition_list) == 1
-                (legends,
-                 dep_var_names,
-                 free_var_names,
-                 fig_types,
-                 xs,
-                 ys,
-                 y_uncs,
-                 normalize_performances) = _handle_underspecified(dconf_dicts,
-                                                                  figure_definition_list[0],
-                                                                  figure_definition_filename)
+                fig = _handle_underspecified(dconf_dicts,
+                                                figure_definition_list[0],
+                                                figure_definition_filename)
             else:
-                (legends,
-                 dep_var_names,
-                 free_var_names,
-                 fig_types,
-                 xs,
-                 ys,
-                 y_uncs,
-                 normalize_performances) = _handle_bar_and_graph(dconf_dicts,
-                                                                 figure_definition_list,
-                                                                 figure_definition_filename)
-            draw_figure(figure_name, legends, dep_var_names, free_var_names,
-                        fig_types, xs, ys, y_uncs, normalize_performances)
+                fig = _handle_bar_and_graph(dconf_dicts,
+                                            figure_definition_list,
+                                            figure_definition_filename)
+            draw_figure(figure_name, fig['legends'], fig['dep_var_names'],
+                        fig['free_var_names'], fig['fig_types'], fig['xs'],
+                        fig['ys'], fig['y_uncs'], fig['normalize_performances'])
 
     instdir, figure_definition_filenames, export_folder = _parse_sysarg(sys.argv[1:])
     figure_folder = os.path.join(export_folder, FIGURE_FOLDER_NAME)
