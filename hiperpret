@@ -41,7 +41,7 @@ RUNTIME = "runtime"
 # Names of some the keys in dconf_dicts
 # These are keys whose values cannot be used to describe the setup for this
 # runs.
-# This is used for making legends for the figure type "underspecified"
+# This is used for making legends for the figure type "runtimes"
 UNIV_DCONF_KEY1 = "mean runtime uncertainty"
 UNIV_DCONF_KEY2 = "number of runs"
 UNIV_DCONF_KEY3 = "mean runtime"
@@ -587,7 +587,10 @@ def export_files(bms, instdir, export_folder):
             _export_runs(instdir, bm.name, impl.name, filename_runs)
             _export_dconfs(instdir, bm.name, impl.name, filename_dconfs)
 
-            
+#########################################################
+# Function for getting two-dimensional points which are #
+#               used for figure production              #
+#########################################################
 def get_2d_points_dconf_dicts(dconf_dicts,
                               free_var,
                               locked_vars,
@@ -615,11 +618,6 @@ def get_2d_points_dconf_dicts(dconf_dicts,
 
     num_of_vars = len(dconf_dicts[0].keys())
     num_of_locked_vars = len(locked_vars.keys())
-    # The below check should probably be performed.
-#    if num_of_vars - num_of_locked_vars != 5:
-#       raise Exception("The wrong number of locked variables has been provided.\
-#       The configuration dicts contain %d variables." % num_of_vars)
-    #filter the dconfs that agree with the locked variables.
     try:
         ret_dconfs = filter(lambda dconf_dict:
                             all(map(lambda key: dconf_dict[str(key)] == locked_vars[str(key)],
@@ -677,6 +675,33 @@ def get_2d_points_dconf_dicts(dconf_dicts,
         return x_values, y_values_floats, y_unc_floats
     return x_values_floats, y_values_floats, y_unc_floats
 
+#########################################################
+#    Functions which are used for graph and bar chart   #
+#                       production                      #
+#########################################################
+
+def check_for_valid_graph_definition(legends, color_codes, dep_var_names,
+                                     free_var_names, normalize_performances,
+                                     fig_types):
+    """ Raises an exception if graphs printed in same figure are non-uniform
+        """
+    no_of_graphs = len(legends)
+    if no_of_graphs > len(color_codes):
+        print("Warning: Only %d different colors exist.\
+        %d different graphs requested for one figure." %
+              (len(color_codes), no_of_graphs))
+    if not all(map(lambda name: name == dep_var_names[0], dep_var_names)):
+        raise Exception("Figure requested with non-uniform dependent variable names")
+    if not all(map(lambda name: name == free_var_names[0], free_var_names)):
+        raise Exception("Figure requested with non-uniform free variable variable names")
+    if not all(map(lambda bool_val: bool_val == normalize_performances[0], normalize_performances)):
+        raise Exception("Figure requested with non-uniform normalized booleans")
+    if not all(map(lambda fig_type: fig_type == fig_types[0], fig_types)):
+        raise Exception("Figure requested with non-uniform fig types. \
+        For a specific figure, all types must be either \"bar\" or \"graph\"")
+    return
+
+# should be split into draw_bar_chart and draw_graphs
 def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_valss, y_valss, y_uncss, normalize_performances):
     """Draws n bar diagrams or n graphs in one figure.
     If dependent variable name (dep_var) is \"normalized\" performance, then 
@@ -696,30 +721,11 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
         for rect in rects:
             height = float(rect.get_height())
             if normalize_performance:
-                ax.text(rect.get_x()+rect.get_width()/2., 0.05*height, '%.2f'%float(height),
+                ax.text(rect.get_x()+rect.get_width()/2., 0, '%.2f'%float(height),
                         ha='center', va='bottom')
             else:
-                ax.text(rect.get_x()+rect.get_width()/2., 0.05*height, '%d'%int(height),
+                ax.text(rect.get_x()+rect.get_width()/2., 0, '%d'%int(height),
                         ha='center', va='bottom')
-
-    def check_for_valid_function_call():
-        """ Raises an exception if sticky graphs are non-uniform
-        """
-        no_of_graphs = len(legends)
-        if no_of_graphs > len(color_codes):
-            print("Warning: Only %d different colors exist.\
-            %d different graphs requested for one figure." %
-                  (len(color_codes), no_of_graphs))
-        if not all(map(lambda name: name == dep_var_names[0], dep_var_names)):
-            raise Exception("Figure requested with non-uniform dependent variable names")
-        if not all(map(lambda name: name == free_var_names[0], free_var_names)):
-            raise Exception("Figure requested with non-uniform free variable variable names")
-        if not all(map(lambda bool_val: bool_val == normalize_performances[0], normalize_performances)):
-            raise Exception("Figure requested with non-uniform normalized booleans")
-        if not all(map(lambda fig_type: fig_type == fig_types[0], fig_types)):
-            raise Exception("Figure requested with non-uniform fig types. \
-            For a specific figure, all types must be either \"bar\" or \"graph\"")
-        return
 
     def collapse_x_axis_labels(N, x_vals):
         ind = np.arange(1, N + round(N/10), round(N/10) )
@@ -735,7 +741,9 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
         ax.set_title(fig_name)
 
     color_codes = ['b', 'g', 'r', 'c', 'm', 'y']
-    check_for_valid_function_call()
+    check_for_valid_graph_definition(legends, color_codes, dep_var_names,
+                                     free_var_names, normalize_performances,
+                                     fig_types)
     no_of_graphs = len(legends)
     N = len(x_valss[0]) #should be the same for all graphs
     bar_width = float(1)/(N*no_of_graphs)
@@ -751,7 +759,7 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
         else:
             ind = np.asarray(map(lambda f: int(f), x_vals))
         if fig_types[i] == "bar":
-            rects1 = ax.bar(ind+i*bar_width, y_vals, bar_width, color = color_codes[i % len(color_codes)], yerr=y_uncs)
+            rects1 = ax.bar(ind+i*bar_width, y_vals, bar_width, color = color_codes[i % len(color_codes)], yerr=y_uncs, error_kw=dict(ecolor='black', lw=2, capsize=5, capthick=2))
             rects = rects + (rects1,)
         elif fig_types[i] == "graph":
             rects1 = ax.plot(ind, y_vals, 'bo', ind, y_vals, color = color_codes[i % len(color_codes)])
@@ -818,12 +826,14 @@ if __name__ == "__main__":
                 dconf_dicts.append(get_dconf_dicts(bm.name, imp.name, instdir))
         return flatten_list(dconf_dicts)
 
-    def _handle_underspecified(dconf_dicts, fig_def, filename):
-        """ This handles the figure type 'underspecified'. The return values
-        make it possible to produce the graph.
+    def _handle_runtimes(dconf_dicts, fig_def, filename):
+        """ This produces a fig dict for figure type 'runtimes'.
+        This dict makes it possible to produce a bar chart.
         """
         def _get_legend(dconf_dict, fig_def):
-            """ Gets legend for underspecified figure
+            """ Gets legend for runtimes figure
+            These legends are based on the non-locked variables but only the
+            values and not the keys of the dicts are printed.
             """
             legend = ""
             for key in dconf_dict:
@@ -832,27 +842,41 @@ if __name__ == "__main__":
                     legend = legend + dconf_dict[key] + ', '
             legend = legend[:legend.rfind(', ')]
             return legend
-                
+
+        def _filter_dconfs(dconf_dicts, locked_vars):
+            """ Removes all dconfs whose variable values do not match all those
+            in locked_vars. If a dict does not have a key defined in 
+            locked_vars, the dict is accepted, i.e., not filtered out
+            """
+            accepted_dconfs = []
+            for d in dconf_dicts:
+                accept = True
+                for lvk in locked_vars.keys():
+                    try:
+                        if not locked_vars[lvk] == d[lvk]:
+                            accept = False
+                    except KeyError as e:
+                        print("Warning: configuration variable %s is not present " \
+                              "in implementation %s which is drawn as a part of a " \
+                              "\"runtimes\" graph" %
+                              (e.args, d['implementation_name']))
+                        continue
+                if accept:
+                    accepted_dconfs.append(d)
+            return accepted_dconfs
+            
         assert type(fig_def) == dict
         assert fig_def["dependent variable"] == "mean runtime"
         locked_vars = fig_def["locked variables"]
-        legend = ""
-        try:
-            for lvk in list(locked_vars.keys()):
-                dconf_dicts = filter(lambda d: locked_vars[lvk] == d[lvk], dconf_dicts)
-                ## legend should be a list containing strings describing each dconf_dict in the final dconf_dicts list.
-        except KeyError as e:
-            print("Key error with key:")
-            print(e.args)
-            raise Exception("KeyError in JSON file. \
-            Key not found in dicts describing setups (dconfs). \
-            JSON file where key was found: %s" % filename)
-        N = len(dconf_dicts)
-        fig = {}
-        fig['ys'] = map(lambda d: [float(d["mean runtime"])], dconf_dicts) # must be list list
-        fig['y_uncs'] = map(lambda d: [float(d["mean runtime uncertainty"])], dconf_dicts)
+        dconf_dicts = _filter_dconfs(dconf_dicts, locked_vars)
+        N = len(dconf_dicts); fig = {}
+        fig['ys'] = map(lambda d: [float(d["mean runtime"])],
+                        dconf_dicts) # must be list list
+        fig['y_uncs'] = map(lambda d: [float(d["mean runtime uncertainty"])],
+                            dconf_dicts)
         fig['xs'] = [[0]]*N
-        fig['legends'] = map(lambda d, fd: _get_legend(d, fd), dconf_dicts, [fig_def]*N)
+        fig['legends'] = map(lambda d, fd: _get_legend(d, fd),
+                             dconf_dicts, [fig_def]*N)
         fig['dep_var_names'] = ["mean runtime"]*N;
         fig['free_var_names'] = [""]*N
         fig['normalize_performances'] = [False]*N;
@@ -897,9 +921,9 @@ if __name__ == "__main__":
         for figure_definition_filename in figure_definition_filenames:
             figure_definition_list = read_json_file(figure_definition_filename)
             figure_name = re.sub('\\.json', '', figure_definition_filename)
-            if figure_definition_list[0]["type"] == "underspecified":
+            if figure_definition_list[0]["type"] == "runtimes":
                 assert len(figure_definition_list) == 1
-                fig = _handle_underspecified(dconf_dicts,
+                fig = _handle_runtimes(dconf_dicts,
                                                 figure_definition_list[0],
                                                 figure_definition_filename)
             else:
