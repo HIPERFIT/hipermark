@@ -6,15 +6,21 @@ Hipermark works with this hierarchy:
 
 1. Benchmark: A specific mathematical problem or function (in the mathematical sense) which can be solved by a computer. The specific solutions to this problem can be written in many different languages and can use parallel or sequential logic. It is called a benchmark because it provides a basis for which to compare different implementations of solutions to this problem.
 
-2. Implementation: A specific solution to a problem. An implementation contains the source code of the solution to a specific problem. Each problem can have many different implementations which can use openMP or openCL and can be written in C, C++, futhark, Haskell etc.
+2. Implementation: A specific solution to a problem. An implementation contains the source code of the solution to a specific problem. Each problem can have many different implementations which can use e.g. openMP or openCL and can be written in C, C++, futhark, Haskell etc.
 
-3. Case: An implementation plus input and output data plus any configurations. A case run can be run on a computer since both the source code and the input data is present. A case validates if it produces the output data which is expected from the input data with which the function call is made. So a case is called with both input data and the expected output data. 
+3. Static Configuration: An implementation plus compile-time variables. A compile-time variable is for example REAL_TYPE which can be float or double.
+
+4. Case: A dynamic configuration plus input and expected (correct) output data. The different input data can for example be a small, medium, and a large dataset.
+
+5. Dynamic configuration: A case plus any run-time variables. NUM_THREADS is an example of a run-time variable which an cpp_openmp implementation uses.
+
+6. A run: Each setup (dynamic configuration) can be executed a number of times. This means that the mean runtime and its uncertainty can be found.
 
 #################################################
 ## API and Functionality of hipermark ##
 #################################################
 
-### The user must follow design this to make hipermark work
+In order to run HIPERmark the user must organize the source files in a specific way. The source files are the implementations, the input/output data, and files describing the static and dynamic configurations. The user must also provide a Makefile for each implementation.
 
 Hipermark should be called from the root directory of the structure presented in "Data Structure" below. Besides from the directory structure, the user must provide these files:
 instantiate, instantiate_data, and Makefile

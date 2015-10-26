@@ -50,11 +50,13 @@ array1 = [2, 3, 5, 6, 9]
 array2 = [1, 2, 3, 4, 5]
 array3 = [-1, -1, -1, -1, -1, 1, 1, 1, 1, 1]
 array4 = [-1, 1]
+array5 = [746, 745, 744, 751, 747, 746, 757, 761, 751, 500]
 
 mean1, unc1 = get_mean_and_unc(array1)
 mean2, unc2 = get_mean_and_unc(array2)
 mean3, unc3 = get_mean_and_unc(array3)
 mean4, unc4 = get_mean_and_unc(array4)
+mean5, unc5 = get_mean_and_unc(array5)
 
 print("mean:", mean1)
 print("unc:", unc1)
@@ -71,3 +73,7 @@ print("confidence interval:", mean3 - unc3, mean3 + unc3)
 print("mean:", mean4)
 print("unc:", unc4)
 print("confidence interval:", mean4 - unc4, mean4 + unc4)
+
+print("mean:", mean5)
+print("unc:", unc5)
+print("confidence interval:", mean5 - unc5, mean5 + unc5)

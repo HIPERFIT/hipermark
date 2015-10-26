@@ -9,7 +9,7 @@ import math
 import time
 import hashlib
 import multiprocessing
-# The 'six' library could be imported since it is compatible with both P2 and P3.
+from scipy.stats import t # Student's T distribution
 
 # R indicates that the file is read, W that it is written
 STAT_CONFIG_TEMPLATE_FILENAME = "static_configuration_template.json" #R
@@ -32,10 +32,12 @@ RETURN_CODE = "return_code"
 VALIDATION = "validation"
 RUNTIME = "runtime"
 
+# Numerical constants
+CONFIDENCE_LEVEL = 0.95
+
 def executable(fpath):
     """Returns true if the file exists and can be executed. """
     return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
-
 
 # From http://stackoverflow.com/a/600612/496605
 # when migrating to Python 3, os.makedirs(.., exists_ok = True)
@@ -75,7 +77,7 @@ def static_keywords(keyword):
 
 class Implementation:
     """An implementation is the source code of a solution to a general problem.
-    The hierarchy is: problem -> implementation -> benchmark.
+    The hierarchy is: benchmark, implementation, static configuration, ....
     """
     def __init__(self, hipermark_lib_dir, benchmark_lib_dir, name, directory):
         """The constructor of the class "Implementation".
@@ -101,20 +103,20 @@ class Implementation:
         self.name = name
         self.hipermark_lib_dir = hipermark_lib_dir
         self.benchmark_lib_dir = benchmark_lib_dir
-
-        makefile_file = os.path.join(self.directory, MAKEFILE_FILENAME)
-        self.makefile_file = makefile_file
+        self.makefile_file = os.path.join(self.directory, MAKEFILE_FILENAME)
         self._gather_static_configs()
         self._gather_runtime_configs()
 
     def _all_possible_configurations(self, keyword_handler, template):
-        """ Takes a dict (representing a JSON) where the values are lists.
+        """ Takes a dict (representing a JSON) where the values are lists or
+        strings.
         Finds the cartesian product of the lists and returns all points in
         the space of the cartesian product as a list of dicts where the values
-        are scalars (non lists).
+        are scalars (non lists). Strings are converted to lists by the
+        keyword_handler function.
 
         keyword arguments:
-        keyword_handler -- A function parsing keywords (vals that are strings, not lists)
+        keyword_handler -- A function converting keywords to lists
         template -- A dict with lists as values
         """
         all_configs = [{}]
@@ -143,7 +145,8 @@ class Implementation:
     def _gather_runtime_configs(self):
         """ Reads the runtime config JSON file and produces the cartesian product
         of all values therein that are lists."""
-        runtime_config_file = os.path.join(self.directory, RUNTIME_CONFIG_TEMPLATE_FILENAME)
+        runtime_config_file = os.path.join(self.directory,
+                                           RUNTIME_CONFIG_TEMPLATE_FILENAME)
         if not os.path.isfile(runtime_config_file):
             self.runtime_config_exists = False
             self.runtime_config_list = [{'name': "default", 'dict': {}}]
@@ -360,16 +363,54 @@ def get_nth_moment (result_times, n):
     n -- integer describing that statistical moment of result_times which is returned
     """
     powers = map(lambda x: x**n, result_times)
-    return sum(powers)/float(len(powers))
+    return sum(powers)/float(len(result_times))
 
-def get_average_and_stddev (result_times):
-    """ Returns average and stddev for a list.
+def get_mean_and_unc(result_times):
+    """ Returns mean and uncertainty of mean for a list. The uncertainty is 
+    calculated from Student's T distribution since the population variance is
+    unknown.
 
     Keyword values:
     result_times -- list of result times (floats)
+
+    return values:
+    sample_mean -- the observed mean
+    unc -- The uncertainty according to Student's T distribution
     """
-    av = get_nth_moment(result_times, 1)
-    return (av, math.sqrt(get_nth_moment(result_times, 2) - av**2))
+    N = len(result_times)
+    sample_mean = get_nth_moment(result_times, 1)
+    sample_variance = sum([(x - sample_mean)**2 for x in result_times])/float(N - 1)
+    # since the uncertainty in each measurement is 0.5 ms, the
+    # sample_variance should never go below 0.5/sqrt(N).
+    if sample_variance < 0.5/math.sqrt(N):
+        sample_variance = 0.5/math.sqrt(N)
+    estimated_std_err = math.sqrt(sample_variance) / math.sqrt(N)
+    interval = t.interval(CONFIDENCE_LEVEL,
+                          N - 1,
+                          loc = sample_mean,
+                          scale = estimated_std_err)
+    unc = (interval[1] - interval[0])/2
+    return (sample_mean, unc)
+
+# def get_nth_moment (result_times, n):
+#     """ 
+#     Calculates the nth moment of a list.
+
+#     Keyword values:
+#     result_times -- list of result times (floats)
+#     n -- integer describing that statistical moment of result_times which is returned
+#     """
+#     powers = map(lambda x: x**n, result_times)
+#     return sum(powers)/float(len(powers))
+
+# def get_average_and_stddev (result_times):
+#     """ Returns average and stddev for a list.
+
+#     Keyword values:
+#     result_times -- list of result times (floats)
+#     """
+#     av = get_nth_moment(result_times, 1)
+#     return (av, math.sqrt(get_nth_moment(result_times, 2) - av**2))
 
 def find_run_counter(target_dir):
     """Finds the run number for the first run of this execution.
@@ -830,8 +871,7 @@ if __name__ == '__main__':
                   (desc_octuple(benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset, run),
                    failed_octuple[f]))
 
-        # When uncommented, these lines prints data from all succesful runs.
-        
+## When uncommented, these lines prints data from all succesful runs.        
     # print("\nSucceeded:")
     # for s in successful_octuple:
     #     (benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset, run) = s
@@ -842,7 +882,7 @@ if __name__ == '__main__':
     print("\nAverage Run Times:")
     for s in successful_septuple:
         (benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset) = s
-        av, stddev = get_average_and_stddev(successful_septuple[s])
-        rel_stddev = stddev/float(av)
-        print("%s: Average time: %d, standard deviation: %.1f, relative standard deviation: %.1E" %
-              (desc_septuple(benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset), av, stddev, rel_stddev))
+        av, unc = get_mean_and_unc(successful_septuple[s])
+        rel_unc = unc/float(av)
+        print("%s: mean runtime: %d, uncertainty of mean: %.1f, relative uncertainty: %.1E" %
+              (desc_septuple(benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset), av, unc, rel_unc))
