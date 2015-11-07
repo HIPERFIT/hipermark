@@ -100,6 +100,8 @@ def get_nth_moment (result_times, n):
     result_times -- list of result times (floats)
     n -- integer describing that statistical moment of result_times which is returned
     """
+    if len(result_times) == 0:
+        return float('NaN')
     powers = map(lambda x: x**n, result_times)
     return sum(powers)/float(len(result_times))
 
@@ -116,6 +118,8 @@ def get_mean_and_unc(result_times):
     unc -- The uncertainty according to Student's T distribution
     """
     N = len(result_times)
+    if N == 0:
+        return (float('NaN'), float('NaN'))
     sample_mean = get_nth_moment(result_times, 1)
     sample_variance = sum([(x - sample_mean)**2 for x in result_times])/float(N - 1)
     # since the uncertainty in each measurement is 0.5 ms, the
@@ -162,8 +166,8 @@ class Run:
         N = len(rundir_content)
         for i in range(N):
             if not rundir_content[i] in dircontents:
-                raise Exception("The folder %s does not contain the file %s." %
-                                (self.directory, rundir_content[i]))
+                raise ImportError("The folder %s does not contain the file %s." %
+                                  (self.directory, rundir_content[i]))
         with open(os.path.join(self.directory,
                                RUNTIME_FILENAME), "r") as runtime_fp:
             with open(os.path.join(self.directory,
@@ -246,9 +250,14 @@ class Dynamic_configuration:
                 if runnum < 0:
                     raise Exception("Only non-negative run numbers (i.e., directory names)\
                 are allowed in %s." % target_dir)
-                self.runs[runnum] = Run(self.benchmark, self.implementation,
-                                        self.static_configuration, self.case,
-                                        self, runnum, runpath)
+                try:
+                    runObject = Run(self.benchmark, self.implementation,
+                                            self.static_configuration, self.case,
+                                            self, runnum, runpath)
+                    self.runs[runnum] = runObject
+                except ImportError:
+                    print("Problem with run")
+                    print(self)
             except ValueError:
                 raise Exception("The folder %s may only contain folders with\
                 integer name." % self.directory)
