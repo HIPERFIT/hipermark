@@ -884,6 +884,9 @@ if __name__ == "__main__":
             accepted_dconfs = []
             for d in dconf_dicts:
                 accept = True
+                if not d['valid']:
+                    accept = False
+                    continue
                 for lvk in locked_vars.keys():
                     try:
                         if not locked_vars[lvk] == d[lvk]:
