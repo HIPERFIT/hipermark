@@ -908,6 +908,7 @@ if __name__ == "__main__":
             "which is not matched by any of the configurations that have been" \
             "run.")
             raise ImportError
+        print(dconf_dicts) # DEV
         fig['ys'] = map(lambda d: [float(d["mean runtime"])],
                         dconf_dicts) # must be list list
         fig['y_uncs'] = map(lambda d: [float(d["mean runtime uncertainty"])],
