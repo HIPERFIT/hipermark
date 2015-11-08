@@ -716,8 +716,8 @@ def compare_json(json1, json2):
     The order of the arguments is arbitrary.
     
     keyword aguments:
-    json1 -- calculated result (arbitrary order)
-    json2 -- expected result (arbitrary order)
+    json1 -- calculated result
+    json2 -- expected result (Function is symmetrical in json1, json2)
     """
     if type(json1) != type(json2):
         return False

@@ -45,7 +45,9 @@ RUNTIME = "runtime"
 UNIV_DCONF_KEY1 = "mean runtime uncertainty"
 UNIV_DCONF_KEY2 = "number of runs"
 UNIV_DCONF_KEY3 = "mean runtime"
-UNIV_DCONF_KEYS = [UNIV_DCONF_KEY1, UNIV_DCONF_KEY2, UNIV_DCONF_KEY3]
+UNIV_DCONF_KEY4 = "valid"
+UNIV_DCONF_KEYS = [UNIV_DCONF_KEY1, UNIV_DCONF_KEY2,
+                   UNIV_DCONF_KEY3, UNIV_DCONF_KEY4]
 
 # Numerical constants
 CONFIDENCE_LEVEL = 0.95
@@ -101,7 +103,8 @@ def get_nth_moment (result_times, n):
     n -- integer describing that statistical moment of result_times which is returned
     """
     if len(result_times) == 0:
-        return float('NaN')
+        print("WARNING: get_nth_moment called with empty result_times list")
+        return float('NaN') # This should not happen
     powers = map(lambda x: x**n, result_times)
     return sum(powers)/float(len(result_times))
 
@@ -119,6 +122,7 @@ def get_mean_and_unc(result_times):
     """
     N = len(result_times)
     if N == 0:
+        print("WARNING: get_mean_and_unc called with empty result_times list")
         return (float('NaN'), float('NaN'))
     sample_mean = get_nth_moment(result_times, 1)
     sample_variance = sum([(x - sample_mean)**2 for x in result_times])/float(N - 1)
@@ -165,7 +169,19 @@ class Run:
         dircontents = os.listdir(self.directory)
         N = len(rundir_content)
         for i in range(N):
-            if not rundir_content[i] in dircontents:
+            if not rundir_content[i] in dircontents: #something is missing
+                self.runtime = 'NaN' # This indicates an unsuccesful run
+                self.retcode = 'NA'
+                self.ts_start = 'NA'
+                self.ts_end = 'NA'
+                self.validation = 'NA'
+                self.runtime = 'NA'
+                with open(os.path.join(self.directory,
+                                       STDERR_FILENAME), "r") as stderr_fp:
+                    with open(os.path.join(self.directory,
+                                           STDOUT_FILENAME), "r") as stdout_fp:
+                        self.stderr = str(stderr_fp.read())
+                        self.stdout = str(stdout_fp.read())                
                 raise ImportError("The folder %s does not contain the file %s." %
                                   (self.directory, rundir_content[i]))
         with open(os.path.join(self.directory,
@@ -219,6 +235,7 @@ class Dynamic_configuration:
         self.name = name
         self.directory = directory
         self.runs = {}
+        self.valid = True # indicates that all runs were succesfull
         dconf_filename = os.path.join(self.directory,
                                       DYNAMIC_CONFIGURATION_FILENAME)
         if not os.path.isfile(dconf_filename):
@@ -241,6 +258,7 @@ class Dynamic_configuration:
                 continue
             runpath = os.path.join(self.directory, run)
             if not os.path.isdir(runpath):
+                self.valid = False                
                 raise Exception("%s may only contain %s and directories \
                 containing runs. %s is neither." %
                                 (self.directory, DYNAMIC_CONFIGURATION_FILENAME,
@@ -248,6 +266,7 @@ class Dynamic_configuration:
             try:
                 runnum = int(run)
                 if runnum < 0:
+                    self.valid = False                    
                     raise Exception("Only non-negative run numbers (i.e., directory names)\
                 are allowed in %s." % target_dir)
                 try:
@@ -256,9 +275,11 @@ class Dynamic_configuration:
                                             self, runnum, runpath)
                     self.runs[runnum] = runObject
                 except ImportError:
+                    self.valid = False
                     print("Problem with run")
                     print(self)
             except ValueError:
+                self.valid = False
                 raise Exception("The folder %s may only contain folders with\
                 integer name." % self.directory)
         self.number_of_runs = len(self.runs.keys())
@@ -478,7 +499,7 @@ def get_run_dicts(benchmark_name, implementation_name, instdir):
     """ Given an implementation, this function returns a list of dictionaries
     where each element describes a specific run.
     """
-    def _generate_json(run):
+    def _generate_json(run):          
         run_data = {}
         run_data['benchmark_name'] = run.benchmark.name
         run_data['implementation_name'] = run.implementation.name
@@ -508,8 +529,9 @@ def get_dconf_dicts(benchmark_name, implementation_name, instdir):
     """
     def belongs_to_dconf(configuration, run_dict):
         for key in configuration:
-            if not run_dict[key] == configuration[key]:
-                return False
+            if key != 'valid':
+                if not run_dict[key] == configuration[key]:
+                    return False
         return True
     
     def get_runs_of_dconf(configuration, run_dicts):
@@ -525,6 +547,7 @@ def get_dconf_dicts(benchmark_name, implementation_name, instdir):
         dconf_data['implementation_name'] = dconf.implementation.name
         dconf_data.update(dconf.static_configuration.configuration)
         dconf_data['dataset_name'] = dconf.case.name
+        dconf_data['valid'] = dconf.valid        
         dconf_data.update(dconf.configuration)
         return dconf_data
 
@@ -552,7 +575,8 @@ def get_dconf_dicts(benchmark_name, implementation_name, instdir):
     run_dicts = get_run_dicts(benchmark_name, implementation_name, instdir)
     configurations = map(_generate_json_dconf, dconfs)
     for config in configurations:
-        set_statistics_for_dconf(config, run_dicts)
+        if config['valid']:
+            set_statistics_for_dconf(config, run_dicts)
     return configurations
 
 #########################################################
@@ -630,7 +654,7 @@ def get_2d_points_dconf_dicts(dconf_dicts,
     try:
         ret_dconfs = filter(lambda dconf_dict:
                             all(map(lambda key: dconf_dict[str(key)] == locked_vars[str(key)],
-                                    locked_vars.keys())),
+                                    locked_vars.keys())) and dconf_dict['valid'],
                             dconf_dicts)
         if not ret_dconfs:
             raise ValueError("The values specified in locked_vars of the JSON\
@@ -710,7 +734,8 @@ def check_for_valid_graph_definition(legends, color_codes, dep_var_names,
         For a specific figure, all types must be either \"bar\" or \"graph\"")
     return
 
-# should be split into draw_bar_chart and draw_graphs
+# should be split into draw_bar_chart and draw_graphs.
+# This is a hair ball atm. Split it to ameliorate that problem.
 def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_valss, y_valss, y_uncss, normalize_performances):
     """Draws n bar diagrams or n graphs in one figure.
     If dependent variable name (dep_var) is \"normalized\" performance, then 
@@ -733,7 +758,7 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
                 ax.text(rect.get_x()+rect.get_width()/2., 0, '%.2f'%float(height),
                         ha='center', va='bottom')
             else:
-                ax.text(rect.get_x()+rect.get_width()/2., 0, '%d'%int(height),
+                ax.text(rect.get_x()+rect.get_width()/2., height*1.05, '%d'%int(height),
                         ha='center', va='bottom')
 
     def collapse_x_axis_labels(N, x_vals):
@@ -788,7 +813,9 @@ def draw_figure(fig_name, legends, dep_var_names, free_var_names, fig_types, x_v
                 ax.set_xticks(ind)
                 ax.set_xticklabels(ind)
     rects = [i[0] for i in rects]
-    ax.legend(tuple(rects), tuple(legends), loc='best' )
+    ax.legend(tuple(rects), tuple(legends), loc='best', prop={'size':6} )
+    x1,x2,y1,y2 = plt.axis()    
+    ax.set_ylim([y1,y2*1.3])
     fig_filename = os.path.join(HIPERPRET_FOLDER, FIGURE_FOLDER_NAME, fig_name)
     pylab.savefig(fig_filename, bbox_inches='tight')
 
@@ -800,18 +827,15 @@ if __name__ == "__main__":
                                        ["instantiation_dir=",
                                         "figure_=",
                                         "export_to="])
-            no_fig_defs = 0
         except getopt.GetoptError as err:
             print str(err)
             sys.exit(2)
+        figure_definition_filenames = []    
         for o, a in opts:
             if o in ("-i", "--instantiation_dir="):
                 instdir = a
             elif o in ("-f", "figure_definition="):
-                if no_fig_defs == 0:
-                    figure_definition_filenames = []
                 figure_definition_filenames.append(a)
-                no_fig_defs += 1
             elif o in ("-o", "--export_to="):
                 export_folder = a
             else:
@@ -879,6 +903,11 @@ if __name__ == "__main__":
         locked_vars = fig_def["locked variables"]
         dconf_dicts = _filter_dconfs(dconf_dicts, locked_vars)
         N = len(dconf_dicts); fig = {}
+        if N == 0:
+            print ("A file defining a runtime graph defines a graph" \
+            "which is not matched by any of the configurations that have been" \
+            "run.")
+            raise ImportError
         fig['ys'] = map(lambda d: [float(d["mean runtime"])],
                         dconf_dicts) # must be list list
         fig['y_uncs'] = map(lambda d: [float(d["mean runtime uncertainty"])],
@@ -920,8 +949,8 @@ if __name__ == "__main__":
                                                      fig['dep_var_names'][-1])
             except ValueError as e:
                 print(e.args)# thrown within get_2d_points_dconf_dicts
-                raise Exception("Problem with definition of figure with name: %s." %
-                                figure_name)
+                raise Exception("Problem with definition of figure in file with name: %s." %
+                                filename)
             fig['xs'].append(retx); fig['ys'].append(rety)
             fig['y_uncs'].append(rety_unc)
         return fig
@@ -932,9 +961,14 @@ if __name__ == "__main__":
             figure_name = re.sub('\\.json', '', figure_definition_filename)
             if figure_definition_list[0]["type"] == "runtimes":
                 assert len(figure_definition_list) == 1
-                fig = _handle_runtimes(dconf_dicts,
-                                                figure_definition_list[0],
-                                                figure_definition_filename)
+                try:
+                    fig = _handle_runtimes(dconf_dicts,
+                                           figure_definition_list[0],
+                                           figure_definition_filename)
+                except ImportError:
+                    print("File %s produced an empty graph. No graph produced "\
+                          "from this file" % figure_definition_filename)
+                    continue
             else:
                 fig = _handle_bar_and_graph(dconf_dicts,
                                             figure_definition_list,
