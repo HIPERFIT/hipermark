@@ -769,19 +769,19 @@ if __name__ == '__main__':
         implementations = []
         datasets = []
         for o, a in opts:
-            if o in ("-o", "--output_dir="):
+            if o in ("-o", "--output-dir="):
                 instdir = a
-            elif o in ("-n", "--number_of_runs="):
+            elif o in ("-n", "--number-of-runs="):
                 number_of_runs = int(a)
-            elif o in ("-b", "--benchmark_folder="):
+            elif o in ("-b", "--benchmark-folder="):
                 benchmark_folder = a
-            elif o in ("-m", "--implementation_name="):
+            elif o in ("-m", "--implementation-name="):
                 implementations.append(a)
-            elif o in ("-d", "--dataset_name="):
+            elif o in ("-d", "--dataset-name="):
                 datasets.append(a)
             else:
                 print("unhandled option given as command line argument: %s", o)
-                print("USAGE: hipermark [(-o|--output_dir=)|(-n|--number_of_runs=)|(-b|benchmark_folder=)|(-m|implementation_name=)|(-d|dataset_name=)]")
+                print("USAGE: hipermark [(-o|--output-dir=)|(-n|--number-of-runs=)|(-b|benchmark-folder=)|(-m|implementation-name=)|(-d|dataset-name=)]")
                 assert False
         if not os.path.isdir(benchmark_folder): ## more checks to valid arguements could be given here.
             raise Exception("The benchmark dir must be a directory.")
