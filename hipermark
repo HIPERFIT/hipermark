@@ -9,6 +9,7 @@ import math
 import time
 import hashlib
 import multiprocessing
+import getopt
 from scipy.stats import t # Student's T distribution
 
 # R indicates that the file is read, W that it is written
@@ -748,41 +749,73 @@ def compare_json(json1, json2):
 
     return json1 == json2
 
-def find_target_dir_and_what_to_run():
-    """ Returns the implementations and dataset to run. It should be checked that the implementations, datasets, etc. exists and an error should be returned if they do not.
+# def find_target_dir_and_what_to_run():
+#     """ Returns the implementations and dataset to run. It should be checked that the implementations, datasets, etc. exists and an error should be returned if they do not.
 
-    Arguments can be seperated by commas: "arg1,arg2" etc.
+#     Arguments can be seperated by commas: "arg1,arg2" etc.
 
-    Return values:
-    ret1 -- folder where instantiations should be placed
-    ret2 -- number of runs per case
-    ret3 -- folder of specific benchmark. E.g., "benchmarks/CalibVolDiff".
-    ret4 -- name of implementation. E.g., "cpp_sequential".
-    ret5 -- name of dataset. E.g., "small".
-    """
-    if len(sys.argv) == 1:
-        return ("instantiations", 1, "benchmarks/CalibVolDiff", None, None)
-    elif len(sys.argv) == 2:
-        return (sys.argv[1], 1, "benchmarks/CalibVolDiff", None, None)
-    elif len(sys.argv) == 3:
-        return (sys.argv[1], int(sys.argv[2]), "benchmarks/CalibVolDiff", None, None)
-    elif len(sys.argv) == 4:
-        return (sys.argv[1], int(sys.argv[2]), sys.argv[3], None, None)
-    elif len(sys.argv) == 5:
-        return (sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4].split(','), None)
-    elif len(sys.argv) == 6:
-        return (sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4].split(','), sys.argv[5].split(','))
-    else:
-        exit("Usage: %s [target_directory] [number_of_runs_per_case] [benchmark] [implementation1,implementation2,...] [dataset1,dataset2,...]" %
-             sys.argv[0])
+#     Return values:
+#     ret1 -- folder where instantiations should be placed
+#     ret2 -- number of runs per case
+#     ret3 -- folder of specific benchmark. E.g., "benchmarks/CalibVolDiff".
+#     ret4 -- name of implementation. E.g., "cpp_sequential".
+#     ret5 -- name of dataset. E.g., "small".
+#     """
+#     if len(sys.argv) == 1:
+#         return ("instantiations", 1, "benchmarks/CalibVolDiff", None, None)
+#     elif len(sys.argv) == 2:
+#         return (sys.argv[1], 1, "benchmarks/CalibVolDiff", None, None)
+#     elif len(sys.argv) == 3:
+#         return (sys.argv[1], int(sys.argv[2]), "benchmarks/CalibVolDiff", None, None)
+#     elif len(sys.argv) == 4:
+#         return (sys.argv[1], int(sys.argv[2]), sys.argv[3], None, None)
+#     elif len(sys.argv) == 5:
+#         return (sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4].split(','), None)
+#     elif len(sys.argv) == 6:
+#         return (sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4].split(','), sys.argv[5].split(','))
+#     else:
+#         exit("Usage: %s [target_directory] [number_of_runs_per_case] [benchmark] [implementation1,implementation2,...] [dataset1,dataset2,...]" %
+#              sys.argv[0])
 
 if __name__ == '__main__':
     """This main function first creates lists of benchmarks, implementations, and datasets
     which it will run. It then runs these benchmarks and prints the results from stdout 
     and from stderr.
     """
+    def _parse_sysarg(sysargv):
+        try:
+            opts, args = getopt.getopt(sysargv,
+                                       "o:n:b:m:d:",
+                                       ["output_dir=",
+                                        "number_of_runs=",
+                                        "benchmark_folder=",
+                                        "implementation_name=",
+                                        "dataset_name="])
+        except getopt.GetoptError as err:
+            print str(err)
+            sys.exit(2)
+        implementations = []
+        datasets = []
+        for o, a in opts:
+            if o in ("-o", "--output_dir="):
+                instdir = a
+            elif o in ("-n", "--number_of_runs="):
+                number_of_runs = int(a)
+            elif o in ("-b", "--benchmark_folder="):
+                benchmark_folder = a
+            elif o in ("-m", "--implementation_name="):
+                implementations.append(a)
+            elif o in ("-d", "--dataset_name="):
+                datasets.append(a)
+            else:
+                print("unhandled option given as command line argument: %s", o)
+                print("USAGE: hipermark [(-o|--output_dir=)|(-n|--number_of_runs=)|(-b|benchmark_folder=)|(-m|implementation_name=)|(-d|dataset_name=)]")
+                assert False
+        if not os.path.isdir(benchmark_folder): ## more checks to valid arguements could be given here.
+            raise Exception("The benchmark dir must be a directory.")
+        return instdir, number_of_runs, benchmark_folder, implementations, datasets
 
-    (instantiations_dir, number_of_runs, benchmark, implementations, datasets) = find_target_dir_and_what_to_run()
+    (instantiations_dir, number_of_runs, benchmark, implementations, datasets) = _parse_sysarg(sys.argv[1:])
     platform_file = "config/platform_example.json"
 
     print("Assuming I am being run from main hipermark directory.")
