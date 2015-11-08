@@ -824,19 +824,19 @@ if __name__ == "__main__":
         try:
             opts, args = getopt.getopt(sysargv,
                                        "i:f:o:",
-                                       ["instantiation_dir=",
-                                        "figure_=",
-                                        "export_to="])
+                                       ["instantiation-dir=",
+                                        "figure=definition",
+                                        "export-to="])
         except getopt.GetoptError as err:
             print str(err)
             sys.exit(2)
         figure_definition_filenames = []    
         for o, a in opts:
-            if o in ("-i", "--instantiation_dir="):
+            if o in ("-i", "--instantiation-dir="):
                 instdir = a
-            elif o in ("-f", "figure_definition="):
+            elif o in ("-f", "figure-definition="):
                 figure_definition_filenames.append(a)
-            elif o in ("-o", "--export_to="):
+            elif o in ("-o", "--export-to="):
                 export_folder = a
             else:
                 print("unhandled option given as command line argument: %s", o)
