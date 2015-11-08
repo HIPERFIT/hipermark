@@ -658,7 +658,7 @@ def get_2d_points_dconf_dicts(dconf_dicts,
                             dconf_dicts)
         if not ret_dconfs:
             raise ValueError("The values specified in locked_vars of the JSON\
-            describing a function were not matched by any runs.")    
+            describing a function were not matched by any runs.")
     except KeyError as e:
         raise Exception("Variable defined in locked_vars not found in\
         configuration dicts: %s" % (e.args))
