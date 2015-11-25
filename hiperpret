@@ -556,9 +556,14 @@ def get_dconf_dicts(benchmark_name, implementation_name, instdir):
         run_times = []
         for run_dict in run_dicts_of_dconf:
             if (run_dict['validation'] != 1) or (run_dict['retcode'] != 0):
-                raise Exception("Non-validated run encountered in the attempt \
-                to create a JSON for each configuration. Stopped. Error found in:",\
-                                str(run_dict))
+                print("Non-validated run encountered in the attempt \
+                       to create a JSON for each configuration. Stopped. Error found in:",\
+                       str(run_dict))
+                configuration['valid'] = 0
+                return
+                # raise Exception("Non-validated run encountered in the attempt \
+                # to create a JSON for each configuration. Stopped. Error found in:",\
+                #                 str(run_dict)) # should this be caught??
             run_times.append(run_dict['runtime'])
         N = len(run_times)
         mean, mean_uncertainty = get_mean_and_unc(run_times)

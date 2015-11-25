@@ -10,7 +10,7 @@ import time
 import hashlib
 import multiprocessing
 import getopt
-from scipy.stats import t # Student's T distribution
+#from scipy.stats import t # Student's T distribution. Needed to calc. uncertainty
 
 # R indicates that the file is read, W that it is written
 STAT_CONFIG_TEMPLATE_FILENAME = "static_configuration_template.json" #R
@@ -366,7 +366,34 @@ def get_nth_moment (result_times, n):
     powers = map(lambda x: x**n, result_times)
     return sum(powers)/float(len(result_times))
 
-def get_mean_and_unc(result_times):
+## Gets actual uncertainty but requires the python-scipy library.
+# def get_mean_and_unc(result_times):
+#     """ Returns mean and uncertainty of mean for a list. The uncertainty is 
+#     calculated from Student's T distribution since the population variance is
+#     unknown.
+#     Keyword values:
+#     result_times -- list of result times (floats)
+#     return values:
+#     sample_mean -- the observed mean
+#     unc -- The uncertainty according to Student's T distribution
+#     """
+#     N = len(result_times)
+#     sample_mean = get_nth_moment(result_times, 1)
+#     sample_variance = sum([(x - sample_mean)**2 for x in result_times])/float(N - 1)
+#     # since the uncertainty in each measurement is 0.5 ms, the
+#     # sample_variance should never go below 0.5/sqrt(N).
+#     if sample_variance < 0.5/math.sqrt(N):
+#         sample_variance = 0.5/math.sqrt(N)
+#     estimated_std_err = math.sqrt(sample_variance) / math.sqrt(N)
+#     interval = t.interval(CONFIDENCE_LEVEL,
+#                           N - 1,
+#                           loc = sample_mean,
+#                           scale = estimated_std_err)
+#     unc = (interval[1] - interval[0])/2
+#     return (sample_mean, unc)
+
+
+def get_mean_and_std_dev(result_times):
     """ Returns mean and uncertainty of mean for a list. The uncertainty is 
     calculated from Student's T distribution since the population variance is
     unknown.
@@ -376,22 +403,12 @@ def get_mean_and_unc(result_times):
 
     return values:
     sample_mean -- the observed mean
-    unc -- The uncertainty according to Student's T distribution
+    sample_std_dev -- sample standard deviation
     """
     N = len(result_times)
     sample_mean = get_nth_moment(result_times, 1)
-    sample_variance = sum([(x - sample_mean)**2 for x in result_times])/float(N - 1)
-    # since the uncertainty in each measurement is 0.5 ms, the
-    # sample_variance should never go below 0.5/sqrt(N).
-    if sample_variance < 0.5/math.sqrt(N):
-        sample_variance = 0.5/math.sqrt(N)
-    estimated_std_err = math.sqrt(sample_variance) / math.sqrt(N)
-    interval = t.interval(CONFIDENCE_LEVEL,
-                          N - 1,
-                          loc = sample_mean,
-                          scale = estimated_std_err)
-    unc = (interval[1] - interval[0])/2
-    return (sample_mean, unc)
+    sample_std_dev = (get_nth_moment(result_times, 2) - sample_mean**2)**.5
+    return (sample_mean, sample_std_dev)
 
 # def get_nth_moment (result_times, n):
 #     """ 
@@ -888,7 +905,7 @@ if __name__ == '__main__':
     print("\nAverage Run Times:")
     for s in successful_septuple:
         (benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset) = s
-        av, unc = get_mean_and_unc(successful_septuple[s])
-        rel_unc = unc/float(av)
-        print("%s: mean runtime: %d, uncertainty of mean: %.1f, relative uncertainty: %.1E" %
-              (desc_septuple(benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset), av, unc, rel_unc))
+        av, std_dev = get_mean_and_std_dev(successful_septuple[s])
+        rel_std_dev = std_dev/float(av)
+        print("%s: mean runtime: %d, std. dev. of mean: %.1f, relative std. dev.: %.1E" %
+              (desc_septuple(benchmark, implementation, stat_config_name, stat_config_dict, runtime_name, runtime_dict, dataset), av, std_dev, rel_std_dev))
